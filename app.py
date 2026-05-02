@@ -1,11 +1,8 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify
 import json
 import os
 import subprocess
 import uuid
-import yaml
-from datetime import datetime
-from pathlib import Path
 
 app = Flask(__name__)
 
@@ -498,15 +495,14 @@ ARSENAL_CATEGORIES = {
     }
 }
 
+
 # =============================================================================
 # DYNAMIC TEMPLATE GENERATOR
 # =============================================================================
 
 def generate_arm_template(category, topic_key, topic_data, custom_inputs):
-    """Generate a complete ARM template based on topic configuration and user inputs"""
-
+    """Generate a complete ARM template based on topic configuration and user inputs."""
     deploy_id = str(uuid.uuid4())[:8]
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     base_name = f"{category}-{topic_key}-{deploy_id}"
 
     # Base ARM template structure
@@ -554,26 +550,6 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
             "defaultValue": custom_inputs.get(input_key, input_config.get('default'))
         }
 
-    # Generate resources based on topic type
-    resources = topic_data.get('resources', [])
-
-    # Add common infrastructure
-    template['resources'].extend([
-        {
-            "type": "Microsoft.Resources/deployments",
-            "apiVersion": "2021-04-01",
-            "name": "[concat('nested-deployment-', variables('uniqueSuffix'))]",
-            "properties": {
-                "mode": "Incremental",
-                "template": {
-                    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-                    "contentVersion": "1.0.0.0",
-                    "resources": []
-                }
-            }
-        }
-    ])
-
     # Add category-specific resources
     if category == "technology":
         template['resources'].append({
@@ -603,6 +579,7 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
 
     return template, base_name, deploy_id
 
+
 # =============================================================================
 # FLASK ROUTES
 # =============================================================================
@@ -611,9 +588,11 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
 def index():
     return render_template('index.html', categories=ARSENAL_CATEGORIES)
 
+
 @app.route('/api/categories')
 def get_categories():
     return jsonify(ARSENAL_CATEGORIES)
+
 
 @app.route('/api/deploy', methods=['POST'])
 def deploy():
@@ -670,8 +649,6 @@ def deploy():
             raise Exception(deploy_result.stderr)
 
         deployment_output = json.loads(deploy_result.stdout)
-
-        # Parse outputs
         outputs = deployment_output.get('properties', {}).get('outputs', {})
 
         return jsonify({
@@ -703,9 +680,10 @@ def deploy():
             "deploy_id": deploy_id
         }), 500
 
+
 @app.route('/api/custom-topic', methods=['POST'])
 def add_custom_topic():
-    """Allow users to add custom topics to any category"""
+    """Allow users to add custom topics to any category."""
     data = request.json
     category = data.get('category')
     topic_key = data.get('topic_key')
@@ -714,7 +692,6 @@ def add_custom_topic():
     if category not in ARSENAL_CATEGORIES:
         return jsonify({"error": "Category not found"}), 400
 
-    # Add to runtime (in production, persist to Cosmos DB or similar)
     ARSENAL_CATEGORIES[category]['topics'][topic_key] = topic_data
 
     return jsonify({
@@ -722,33 +699,32 @@ def add_custom_topic():
         "message": f"Custom topic '{topic_data.get('name')}' added to {ARSENAL_CATEGORIES[category]['name']}"
     })
 
+
 @app.route('/api/status/<deploy_id>')
 def check_status(deploy_id):
-    """Check deployment status"""
+    """Check deployment status."""
     try:
         result = subprocess.run([
             "az", "deployment", "group", "list",
             "--resource-group", f"arsenal-*-{deploy_id}",
-            "--query", "[?contains(name, 'arsenal-{deploy_id}')]",
+            "--query", f"[?contains(name, 'arsenal-{deploy_id}')]",
             "--output", "json"
         ], capture_output=True, text=True, timeout=30)
 
         if result.returncode == 0:
             deployments = json.loads(result.stdout)
-            return jsonify({
-                "deploy_id": deploy_id,
-                "status": deployments[0].get('properties', {}).get('provisioningState', 'Unknown') if deployments else 'Not Found'
-            })
-    except:
+            status = deployments[0].get('properties', {}).get('provisioningState', 'Unknown') if deployments else 'Not Found'
+            return jsonify({"deploy_id": deploy_id, "status": status})
+    except Exception:
         pass
 
     return jsonify({"deploy_id": deploy_id, "status": "Unknown"})
 
+
 @app.route('/api/destroy/<deploy_id>', methods=['POST'])
 def destroy(deploy_id):
-    """Destroy a deployment"""
+    """Destroy a deployment."""
     try:
-        # Find resource group
         result = subprocess.run([
             "az", "group", "list",
             "--query", f"[?contains(name, 'arsenal-') && contains(name, '{deploy_id}')].name",
@@ -756,9 +732,7 @@ def destroy(deploy_id):
         ], capture_output=True, text=True, timeout=30)
 
         if result.returncode == 0 and result.stdout.strip():
-            rg_name = result.stdout.strip().split('\n')[0]
-
-            # Delete resource group
+            rg_name = result.stdout.strip().splitlines()[0]
             subprocess.run([
                 "az", "group", "delete",
                 "--name", rg_name,
@@ -776,6 +750,7 @@ def destroy(deploy_id):
         return jsonify({"status": "error", "error": str(e)}), 500
 
     return jsonify({"status": "error", "message": "Deployment not found"}), 404
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
