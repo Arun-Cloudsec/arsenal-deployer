@@ -33,6 +33,7 @@ def require_auth(f):
         return f(*args, **kwargs)
     return wrapper
 
+
 # =============================================================================
 # AZURE CLI AUTHENTICATION
 # Uses the container's system-assigned managed identity. The identity is
