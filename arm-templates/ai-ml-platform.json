@@ -1,0 +1,160 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workspaceName": {
+      "type": "string",
+      "defaultValue": "arsenal-ml-workspace",
+      "metadata": { "description": "Name of the Azure ML workspace" }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": { "description": "Location for resources" }
+    },
+    "gpuNodeCount": {
+      "type": "int",
+      "defaultValue": 2,
+      "minValue": 1,
+      "maxValue": 10,
+      "metadata": { "description": "Number of GPU nodes in AKS cluster" }
+    },
+    "enableOpenAI": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": { "description": "Enable Azure OpenAI service" }
+    },
+    "openAIModel": {
+      "type": "string",
+      "defaultValue": "gpt-4",
+      "allowedValues": ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"],
+      "metadata": { "description": "Default OpenAI model deployment" }
+    }
+  },
+  "variables": {
+    "aksName": "[concat(parameters('workspaceName'), '-aks')]",
+    "storageName": "[concat('arsenalml', uniqueString(resourceGroup().id))]",
+    "keyVaultName": "[concat('arsenal-kv-', uniqueString(resourceGroup().id))]",
+    "appInsightsName": "[concat(parameters('workspaceName'), '-insights')]",
+    "containerRegistryName": "[concat('arsenalcr', uniqueString(resourceGroup().id))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.MachineLearningServices/workspaces",
+      "apiVersion": "2023-10-01",
+      "name": "[parameters('workspaceName')]",
+      "location": "[parameters('location')]",
+      "identity": { "type": "SystemAssigned" },
+      "properties": {
+        "friendlyName": "[parameters('workspaceName')]",
+        "description": "Arsenal AI/ML Platform Workspace",
+        "storageAccount": "[variables('storageName')]",
+        "keyVault": "[variables('keyVaultName')]",
+        "applicationInsights": "[variables('appInsightsName')]",
+        "containerRegistry": "[variables('containerRegistryName')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+        "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
+        "[resourceId('Microsoft.ContainerRegistry/registries', variables('containerRegistryName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-01-01",
+      "name": "[variables('storageName')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Standard_LRS" },
+      "kind": "StorageV2",
+      "properties": {
+        "encryption": {
+          "services": { "blob": true, "file": true },
+          "keySource": "Microsoft.Storage"
+        },
+        "supportsHttpsTrafficOnly": true,
+        "allowBlobPublicAccess": false
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": { "name": "standard", "family": "A" },
+        "accessPolicies": [],
+        "enableRbacAuthorization": true
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[variables('appInsightsName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": null,
+        "publicNetworkAccessForIngestion": "Enabled",
+        "publicNetworkAccessForQuery": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.ContainerRegistry/registries",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('containerRegistryName')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Standard" },
+      "properties": {
+        "adminUserEnabled": true,
+        "policies": {
+          "trustPolicy": { "status": "disabled", "type": "Notary" },
+          "retentionPolicy": { "status": "enabled", "days": 7 },
+          "quarantinePolicy": { "status": "disabled" }
+        }
+      }
+    },
+    {
+      "condition": "[parameters('enableOpenAI')]",
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2023-10-01-preview",
+      "name": "[concat(parameters('workspaceName'), '-openai')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "S0" },
+      "kind": "OpenAI",
+      "properties": {
+        "customSubDomainName": "[concat(parameters('workspaceName'), '-openai')]",
+        "publicNetworkAccess": "Enabled"
+      }
+    },
+    {
+      "condition": "[parameters('enableOpenAI')]",
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2023-10-01-preview",
+      "name": "[concat(parameters('workspaceName'), '-openai/', parameters('openAIModel'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', concat(parameters('workspaceName'), '-openai'))]"
+      ],
+      "sku": { "name": "Standard", "capacity": 10 },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "[parameters('openAIModel')]",
+          "version": "0613"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "mlWorkspaceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.MachineLearningServices/workspaces', parameters('workspaceName'))]"
+    },
+    "mlWorkspaceName": {
+      "type": "string",
+      "value": "[parameters('workspaceName')]"
+    }
+  }
+}
