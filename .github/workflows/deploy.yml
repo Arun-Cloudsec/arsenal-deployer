@@ -288,9 +288,32 @@ jobs:
           IMAGE="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           echo "Deploying image: $IMAGE"
 
+          # Detect existing Container App and its provisioning state.
+          EXISTS=false
+          PROV_STATE=""
           if az containerapp show \
                --name arsenal-deployer-aca \
                --resource-group ${{ env.AZURE_RG }} >/dev/null 2>&1; then
+            EXISTS=true
+            PROV_STATE=$(az containerapp show \
+              --name arsenal-deployer-aca \
+              --resource-group ${{ env.AZURE_RG }} \
+              --query properties.provisioningState -o tsv)
+            echo "Container App exists, provisioningState=$PROV_STATE"
+          fi
+
+          # A Failed resource cannot be updated — wipe it and recreate.
+          if [ "$EXISTS" = "true" ] && [ "$PROV_STATE" != "Succeeded" ]; then
+            echo "Provisioning state is '$PROV_STATE' — deleting before recreate..."
+            az containerapp delete \
+              --name arsenal-deployer-aca \
+              --resource-group ${{ env.AZURE_RG }} \
+              --yes \
+              --output none
+            EXISTS=false
+          fi
+
+          if [ "$EXISTS" = "true" ]; then
             echo "Updating existing Container App..."
             az containerapp registry set \
               --name arsenal-deployer-aca \
