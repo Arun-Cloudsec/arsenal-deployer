@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Arsenal Deployer | Multi-Category Azure Platform</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --primary: #6366f1;
+            --secondary: #8b5cf6;
+            --accent: #06b6d4;
+            --dark: #0f172a;
+            --card: #1e293b;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--dark);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            padding: 3rem 0;
+            background: linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.1) 100%);
+            border-radius: 24px;
+            margin-bottom: 3rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .logo {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--muted);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .stats-bar {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            margin-top: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Category Navigation */
+        .category-nav {
+            display: flex;
+            gap: 1rem;
+            overflow-x: auto;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            scrollbar-width: thin;
+            scrollbar-color: var(--primary) transparent;
+        }
+
+        .category-nav::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .category-nav::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 3px;
+        }
+
+        .category-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 1.5rem;
+            background: var(--card);
+            border: 2px solid transparent;
+            border-radius: 16px;
+            color: var(--text);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            min-width: fit-content;
+        }
+
+        .category-btn:hover {
+            transform: translateY(-2px);
+            border-color: var(--primary);
+            box-shadow: 0 8px 24px rgba(99,102,241,0.2);
+        }
+
+        .category-btn.active {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-color: transparent;
+            box-shadow: 0 8px 24px rgba(99,102,241,0.3);
+        }
+
+        .category-btn .icon {
+            font-size: 1.5rem;
+        }
+
+        .category-btn .badge {
+            background: rgba(255,255,255,0.2);
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+        }
+
+        /* Topics Grid */
+        .topics-section {
+            display: none;
+        }
+
+        .topics-section.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+
+        .add-topic-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.25rem;
+            background: rgba(16, 185, 129, 0.1);
+            border: 2px dashed var(--success);
+            border-radius: 12px;
+            color: var(--success);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .add-topic-btn:hover {
+            background: rgba(16, 185, 129, 0.2);
+            transform: scale(1.02);
+        }
+
+        .topics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .topic-card {
+            background: var(--card);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 1.75rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .topic-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .topic-card:hover::before {
+            opacity: 1;
+        }
+
+        .topic-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(99,102,241,0.3);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+        }
+
+        .topic-card.selected {
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.05);
+        }
+
+        .topic-card.selected::before {
+            opacity: 1;
+            background: var(--success);
+        }
+
+        .topic-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1rem;
+        }
+
+        .topic-name {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .topic-desc {
+            color: var(--muted);
+            font-size: 0.9375rem;
+            margin-bottom: 1rem;
+        }
+
+        .topic-meta {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .meta-tag {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.375rem 0.75rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            font-size: 0.8125rem;
+            color: var(--muted);
+        }
+
+        .meta-tag.cost {
+            color: var(--success);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .meta-tag.time {
+            color: var(--warning);
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        /* Configuration Panel */
+        .config-panel {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 480px;
+            max-width: 100%;
+            height: 100vh;
+            background: var(--card);
+            border-left: 1px solid rgba(255,255,255,0.1);
+            padding: 2rem;
+            overflow-y: auto;
+            z-index: 1000;
+            animation: slideIn 0.4s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+
+        .config-panel.active {
+            display: block;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .panel-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .close-btn:hover {
+            background: rgba(255,255,255,0.1);
+            color: var(--text);
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .input-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        .input-hint {
+            font-size: 0.8125rem;
+            color: var(--muted);
+            margin-bottom: 0.5rem;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            color: var(--text);
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+            font-family: 'Fira Code', monospace;
+        }
+
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .checkbox-wrapper:hover {
+            background: rgba(255,255,255,0.06);
+        }
+
+        input[type="checkbox"] {
+            width: auto;
+            accent-color: var(--primary);
+        }
+
+        /* Deploy Button */
+        .deploy-section {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .deploy-btn {
+            width: 100%;
+            padding: 1.25rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border: none;
+            border-radius: 16px;
+            color: white;
+            font-size: 1.125rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+        }
+
+        .deploy-btn:hover:not(:disabled) {
+            transform: scale(1.02);
+            box-shadow: 0 12px 32px rgba(99,102,241,0.4);
+        }
+
+        .deploy-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Progress Overlay */
+        .progress-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .progress-overlay.active {
+            display: flex;
+        }
+
+        .progress-card {
+            background: var(--card);
+            padding: 3rem;
+            border-radius: 24px;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .spinner-ring {
+            width: 80px;
+            height: 80px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 2rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .timer-display {
+            font-size: 3rem;
+            font-weight: 800;
+            color: var(--accent);
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 1rem;
+        }
+
+        .progress-status {
+            font-size: 1.125rem;
+            color: var(--muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-detail {
+            font-size: 0.9375rem;
+            color: var(--muted);
+            opacity: 0.7;
+        }
+
+        /* Result Modal */
+        .result-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 3000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .result-modal.active {
+            display: flex;
+        }
+
+        .result-card {
+            background: var(--card);
+            padding: 2.5rem;
+            border-radius: 24px;
+            max-width: 600px;
+            width: 90%;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            animation: scaleIn 0.4s ease;
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .result-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .result-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--success);
+            margin-bottom: 1rem;
+        }
+
+        .result-details {
+            background: rgba(255,255,255,0.03);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            color: var(--muted);
+        }
+
+        .detail-value {
+            font-weight: 600;
+            font-family: 'Fira Code', monospace;
+        }
+
+        .result-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 1rem;
+            border-radius: 12px;
+            font-weight: 600;
+            text-align: center;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+
+        .action-btn.primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+        }
+
+        .action-btn.secondary {
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        /* Add Topic Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.9);
+            z-index: 1500;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--card);
+            padding: 2rem;
+            border-radius: 24px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            h1 { font-size: 2rem; }
+            .config-panel { width: 100%; }
+            .topics-grid { grid-template-columns: 1fr; }
+            .stats-bar { gap: 1.5rem; }
+        }
+
+        /* Resource Tags */
+        .resource-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .resource-tag {
+            padding: 0.25rem 0.625rem;
+            background: rgba(99,102,241,0.1);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: var(--primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo">🚀</div>
+            <h1>Arsenal Deployer</h1>
+            <p class="subtitle">Choose your category, select your stack, customize inputs, and deploy to Azure in under 60 seconds</p>
+
+            <div class="stats-bar">
+                <div class="stat">
+                    <div class="stat-value" id="categoryCount">8</div>
+                    <div class="stat-label">Categories</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="topicCount">32</div>
+                    <div class="stat-label">Topics</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">&lt;60s</div>
+                    <div class="stat-label">Deploy Time</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">∞</div>
+                    <div class="stat-label">Customizable</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Category Navigation -->
+        <div class="category-nav" id="categoryNav">
+            <!-- Injected by JS -->
+        </div>
+
+        <!-- Topics Sections -->
+        <div id="topicsContainer">
+            <!-- Injected by JS -->
+        </div>
+    </div>
+
+    <!-- Configuration Panel -->
+    <div class="config-panel" id="configPanel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title" id="panelTitle">Configure Deployment</div>
+                <div style="color: var(--muted); font-size: 0.875rem;" id="panelSubtitle">Customize your stack</div>
+            </div>
+            <button class="close-btn" onclick="closePanel()">✕</button>
+        </div>
+
+        <div id="dynamicInputs">
+            <!-- Dynamic inputs injected here -->
+        </div>
+
+        <div class="input-group">
+            <label class="input-label">Additional Requirements</label>
+            <div class="input-hint">Add custom JSON, Terraform vars, or special requirements</div>
+            <textarea id="additionalRequirements" placeholder='{
+  "customTags": {"project": "alpha", "owner": "team-a"},
+  "enableBackup": true,
+  "backupRetentionDays": 30,
+  "networkIsolation": "private_endpoint"
+}'></textarea>
+        </div>
+
+        <div class="deploy-section">
+            <button class="deploy-btn" id="deployBtn" onclick="deploy()">
+                <span>🚀</span>
+                <span>DEPLOY TO AZURE NOW</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Progress Overlay -->
+    <div class="progress-overlay" id="progressOverlay">
+        <div class="progress-card">
+            <div class="spinner-ring"></div>
+            <div class="timer-display" id="timerDisplay">00:00</div>
+            <div class="progress-status" id="progressStatus">Initializing deployment...</div>
+            <div class="progress-detail" id="progressDetail">Creating resource group</div>
+        </div>
+    </div>
+
+    <!-- Result Modal -->
+    <div class="result-modal" id="resultModal">
+        <div class="result-card">
+            <div class="result-icon">🎉</div>
+            <div class="result-title" id="resultTitle">Deployment Successful!</div>
+            <div id="resultMessage"></div>
+
+            <div class="result-details" id="resultDetails">
+                <!-- Details injected -->
+            </div>
+
+            <div class="result-actions">
+                <a href="#" class="action-btn primary" id="portalLink" target="_blank">🔗 Open Azure Portal</a>
+                <button class="action-btn secondary" onclick="closeResult()">Deploy Another</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Topic Modal -->
+    <div class="modal-overlay" id="addTopicModal">
+        <div class="modal-content">
+            <div class="modal-title">➕ Add Custom Topic</div>
+
+            <div class="input-group">
+                <label class="input-label">Category</label>
+                <select id="newTopicCategory">
+                    <!-- Options injected -->
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">Topic Name</label>
+                <input type="text" id="newTopicName" placeholder="e.g., Blockchain Node">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">Description</label>
+                <input type="text" id="newTopicDesc" placeholder="Brief description of what this deploys">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">Estimated Cost</label>
+                <input type="text" id="newTopicCost" placeholder="$200-800/mo">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">Azure Resources (comma-separated)</label>
+                <input type="text" id="newTopicResources" placeholder="Azure Kubernetes Service, Cosmos DB, Key Vault">
+            </div>
+
+            <div class="input-group">
+                <label class="input-label">Custom Inputs (JSON schema)</label>
+                <textarea id="newTopicInputs" placeholder='{"node_count": {"type": "number", "default": 3, "label": "Node Count"}}'></textarea>
+            </div>
+
+            <button class="deploy-btn" onclick="submitCustomTopic()" style="margin-top: 1rem;">
+                Add Topic
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // =============================================================================
+        // DATA & STATE
+        // =============================================================================
+
+        let categories = {{ categories|tojson }};
+        let selectedCategory = null;
+        let selectedTopic = null;
+        let timerInterval = null;
+        let startTime = null;
+
+        // =============================================================================
+        // INITIALIZATION
+        // =============================================================================
+
+        function init() {
+            renderCategories();
+            renderTopics();
+            updateStats();
+        }
+
+        function updateStats() {
+            let topicCount = 0;
+            Object.values(categories).forEach(cat => {
+                topicCount += Object.keys(cat.topics).length;
+            });
+            document.getElementById('topicCount').textContent = topicCount;
+        }
+
+        // =============================================================================
+        // CATEGORY RENDERING
+        // =============================================================================
+
+        function renderCategories() {
+            const nav = document.getElementById('categoryNav');
+            nav.innerHTML = '';
+
+            Object.entries(categories).forEach(([key, cat]) => {
+                const btn = document.createElement('button');
+                btn.className = 'category-btn';
+                btn.dataset.category = key;
+                btn.innerHTML = `
+                    <span class="icon">${cat.icon}</span>
+                    <span>${cat.name}</span>
+                    <span class="badge">${Object.keys(cat.topics).length}</span>
+                `;
+                btn.onclick = () => selectCategory(key);
+                nav.appendChild(btn);
+            });
+
+            // Add "Add Topic" button at the end
+            const addBtn = document.createElement('button');
+            addBtn.className = 'category-btn';
+            addBtn.style.background = 'rgba(16, 185, 129, 0.1)';
+            addBtn.style.border = '2px dashed var(--success)';
+            addBtn.innerHTML = `<span class="icon">➕</span><span>Add Topic</span>`;
+            addBtn.onclick = showAddTopicModal;
+            nav.appendChild(addBtn);
+        }
+
+        function selectCategory(key) {
+            selectedCategory = key;
+
+            // Update nav buttons
+            document.querySelectorAll('.category-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.category === key);
+            });
+
+            // Show topics section
+            document.querySelectorAll('.topics-section').forEach(section => {
+                section.classList.toggle('active', section.dataset.category === key);
+            });
+        }
+
+        // =============================================================================
+        // TOPICS RENDERING
+        // =============================================================================
+
+        function renderTopics() {
+            const container = document.getElementById('topicsContainer');
+            container.innerHTML = '';
+
+            Object.entries(categories).forEach(([catKey, cat]) => {
+                const section = document.createElement('div');
+                section.className = 'topics-section';
+                section.dataset.category = catKey;
+
+                const header = document.createElement('div');
+                header.className = 'section-header';
+                header.innerHTML = `
+                    <div>
+                        <div class="section-title">${cat.icon} ${cat.name}</div>
+                        <div style="color: var(--muted); margin-top: 0.25rem;">${cat.description}</div>
+                    </div>
+                    <button class="add-topic-btn" onclick="showAddTopicModal('${catKey}')">
+                        <span>➕</span>
+                        <span>Add Topic</span>
+                    </button>
+                `;
+
+                const grid = document.createElement('div');
+                grid.className = 'topics-grid';
+                grid.id = `grid-${catKey}`;
+
+                Object.entries(cat.topics).forEach(([topicKey, topic]) => {
+                    const card = createTopicCard(catKey, topicKey, topic);
+                    grid.appendChild(card);
+                });
+
+                section.appendChild(header);
+                section.appendChild(grid);
+                container.appendChild(section);
+            });
+        }
+
+        function createTopicCard(catKey, topicKey, topic) {
+            const card = document.createElement('div');
+            card.className = 'topic-card';
+            card.dataset.category = catKey;
+            card.dataset.topic = topicKey;
+
+            const resourcesHtml = topic.resources.map(r => 
+                `<span class="resource-tag">${r}</span>`
+            ).join('');
+
+            card.innerHTML = `
+                <div class="topic-header">
+                    <div>
+                        <div class="topic-name">${topic.name}</div>
+                        <div class="topic-desc">${topic.description}</div>
+                    </div>
+                </div>
+                <div class="topic-meta">
+                    <span class="meta-tag cost">💰 ${topic.estimated_cost}</span>
+                    <span class="meta-tag time">⚡ ${topic.deploy_time}</span>
+                </div>
+                <div class="resource-tags">
+                    ${resourcesHtml}
+                </div>
+            `;
+
+            card.onclick = () => selectTopic(catKey, topicKey, topic, card);
+            return card;
+        }
+
+        // =============================================================================
+        // TOPIC SELECTION & CONFIGURATION
+        // =============================================================================
+
+        function selectTopic(catKey, topicKey, topic, card) {
+            selectedTopic = { category: catKey, key: topicKey, data: topic };
+
+            // Update card selection
+            document.querySelectorAll('.topic-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+
+            // Populate config panel
+            document.getElementById('panelTitle').textContent = topic.name;
+            document.getElementById('panelSubtitle').textContent = topic.description;
+
+            // Generate dynamic inputs
+            const inputsContainer = document.getElementById('dynamicInputs');
+            inputsContainer.innerHTML = '';
+
+            // Standard inputs
+            const standardInputs = [
+                { key: 'projectName', label: 'Project Name', type: 'text', default: `${catKey}-${topicKey}-prod`, hint: 'Used for resource naming and tagging' },
+                { key: 'adminUsername', label: 'Admin Username', type: 'text', default: 'azureuser', hint: 'Administrator username for VMs and services' },
+                { key: 'adminPassword', label: 'Admin Password', type: 'password', default: 'ArsenalDeploy123!', hint: 'Strong password for admin accounts' },
+                { key: 'environment', label: 'Environment', type: 'select', options: ['development', 'staging', 'production'], default: 'production', hint: 'Deployment environment' }
+            ];
+
+            standardInputs.forEach(input => {
+                inputsContainer.appendChild(createInputElement(input));
+            });
+
+            // Topic-specific inputs
+            if (topic.inputs) {
+                const topicSection = document.createElement('div');
+                topicSection.style.marginTop = '2rem';
+                topicSection.innerHTML = '<div style="font-weight: 700; margin-bottom: 1rem; color: var(--accent);">⚙️ Stack Configuration</div>';
+                inputsContainer.appendChild(topicSection);
+
+                Object.entries(topic.inputs).forEach(([key, config]) => {
+                    inputsContainer.appendChild(createInputElement({
+                        key: key,
+                        label: config.label || key,
+                        type: config.type,
+                        default: config.default,
+                        options: config.options,
+                        hint: config.description || `Configure ${config.label}`
+                    }));
+                });
+            }
+
+            // Show panel
+            document.getElementById('configPanel').classList.add('active');
+        }
+
+        function createInputElement(config) {
+            const group = document.createElement('div');
+            group.className = 'input-group';
+
+            const label = document.createElement('label');
+            label.className = 'input-label';
+            label.textContent = config.label;
+
+            const hint = document.createElement('div');
+            hint.className = 'input-hint';
+            hint.textContent = config.hint;
+
+            let input;
+
+            if (config.type === 'select') {
+                input = document.createElement('select');
+                config.options.forEach(opt => {
+                    const option = document.createElement('option');
+                    option.value = opt;
+                    option.textContent = opt.charAt(0).toUpperCase() + opt.slice(1).replace(/_/g, ' ');
+                    if (opt === config.default) option.selected = true;
+                    input.appendChild(option);
+                });
+            } else if (config.type === 'checkbox') {
+                const wrapper = document.createElement('label');
+                wrapper.className = 'checkbox-wrapper';
+                input = document.createElement('input');
+                input.type = 'checkbox';
+                input.checked = config.default;
+                input.id = `input-${config.key}`;
+                const span = document.createElement('span');
+                span.textContent = config.label;
+                wrapper.appendChild(input);
+                wrapper.appendChild(span);
+                group.appendChild(wrapper);
+                return group;
+            } else if (config.type === 'multi_select') {
+                input = document.createElement('select');
+                input.multiple = true;
+                input.style.height = '100px';
+                config.options.forEach(opt => {
+                    const option = document.createElement('option');
+                    option.value = opt;
+                    option.textContent = opt.charAt(0).toUpperCase() + opt.slice(1).replace(/_/g, ' ');
+                    if (config.default.includes(opt)) option.selected = true;
+                    input.appendChild(option);
+                });
+            } else {
+                input = document.createElement('input');
+                input.type = config.type;
+                input.value = config.default || '';
+            }
+
+            input.id = `input-${config.key}`;
+            input.dataset.key = config.key;
+
+            group.appendChild(label);
+            group.appendChild(hint);
+            group.appendChild(input);
+
+            return group;
+        }
+
+        function closePanel() {
+            document.getElementById('configPanel').classList.remove('active');
+            document.querySelectorAll('.topic-card').forEach(c => c.classList.remove('selected'));
+            selectedTopic = null;
+        }
+
+        // =============================================================================
+        // DEPLOYMENT
+        // =============================================================================
+
+        function deploy() {
+            if (!selectedTopic) return;
+
+            const btn = document.getElementById('deployBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳</span><span>Deploying...</span>';
+
+            // Collect inputs
+            const customInputs = {};
+            document.querySelectorAll('[data-key]').forEach(el => {
+                const key = el.dataset.key;
+                if (el.type === 'checkbox') {
+                    customInputs[key] = el.checked;
+                } else if (el.multiple) {
+                    customInputs[key] = Array.from(el.selectedOptions).map(o => o.value);
+                } else {
+                    customInputs[key] = el.value;
+                }
+            });
+
+            const additionalRequirements = document.getElementById('additionalRequirements').value;
+
+            // Show progress
+            document.getElementById('progressOverlay').classList.add('active');
+            startTimer();
+
+            // Simulate progress steps
+            const steps = [
+                { time: 0, status: 'Initializing deployment...', detail: 'Validating Azure credentials' },
+                { time: 5, status: 'Creating resource group...', detail: 'Setting up isolated environment' },
+                { time: 15, status: 'Deploying infrastructure...', detail: 'Provisioning Azure resources' },
+                { time: 30, status: 'Configuring services...', detail: 'Applying custom configurations' },
+                { time: 45, status: 'Running health checks...', detail: 'Verifying deployment integrity' },
+                { time: 55, status: 'Finalizing...', detail: 'Generating access credentials' }
+            ];
+
+            let stepIndex = 0;
+            const stepInterval = setInterval(() => {
+                if (stepIndex < steps.length) {
+                    const step = steps[stepIndex];
+                    document.getElementById('progressStatus').textContent = step.status;
+                    document.getElementById('progressDetail').textContent = step.detail;
+                    stepIndex++;
+                }
+            }, 8000);
+
+            // API call
+            fetch('/api/deploy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category: selectedTopic.category,
+                    topic: selectedTopic.key,
+                    custom_inputs: customInputs,
+                    additional_requirements: additionalRequirements
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                clearInterval(timerInterval);
+                clearInterval(stepInterval);
+                document.getElementById('progressOverlay').classList.remove('active');
+
+                if (data.status === 'success') {
+                    showResult(data);
+                } else {
+                    alert('Deployment failed: ' + (data.error || 'Unknown error'));
+                }
+
+                btn.disabled = false;
+                btn.innerHTML = '<span>🚀</span><span>DEPLOY TO AZURE NOW</span>';
+            })
+            .catch(err => {
+                clearInterval(timerInterval);
+                clearInterval(stepInterval);
+                document.getElementById('progressOverlay').classList.remove('active');
+                alert('Error: ' + err.message);
+                btn.disabled = false;
+                btn.innerHTML = '<span>🚀</span><span>DEPLOY TO AZURE NOW</span>';
+            });
+        }
+
+        function startTimer() {
+            startTime = Date.now();
+            const timerDisplay = document.getElementById('timerDisplay');
+
+            timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const secs = (elapsed % 60).toString().padStart(2, '0');
+                timerDisplay.textContent = `${mins}:${secs}`;
+            }, 100);
+        }
+
+        // =============================================================================
+        // RESULT DISPLAY
+        // =============================================================================
+
+        function showResult(data) {
+            document.getElementById('resultTitle').textContent = data.message;
+            document.getElementById('resultMessage').textContent = 
+                `Your ${selectedTopic.data.name} has been successfully deployed to Azure.`;
+
+            const details = document.getElementById('resultDetails');
+            details.innerHTML = `
+                <div class="detail-row">
+                    <span class="detail-label">Deploy ID</span>
+                    <span class="detail-value">${data.deploy_id}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Resource Group</span>
+                    <span class="detail-value">${data.resource_group}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Category</span>
+                    <span class="detail-value">${categories[data.category].name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Topic</span>
+                    <span class="detail-value">${selectedTopic.data.name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Estimated Cost</span>
+                    <span class="detail-value" style="color: var(--success);">${data.estimated_cost}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Deploy Time</span>
+                    <span class="detail-value">${document.getElementById('timerDisplay').textContent}</span>
+                </div>
+            `;
+
+            document.getElementById('portalLink').href = data.portal_url;
+            document.getElementById('resultModal').classList.add('active');
+        }
+
+        function closeResult() {
+            document.getElementById('resultModal').classList.remove('active');
+            closePanel();
+        }
+
+        // =============================================================================
+        // ADD CUSTOM TOPIC
+        // =============================================================================
+
+        function showAddTopicModal(preselectedCategory) {
+            const modal = document.getElementById('addTopicModal');
+            const select = document.getElementById('newTopicCategory');
+
+            select.innerHTML = '';
+            Object.entries(categories).forEach(([key, cat]) => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = `${cat.icon} ${cat.name}`;
+                if (key === preselectedCategory) option.selected = true;
+                select.appendChild(option);
+            });
+
+            modal.classList.add('active');
+        }
+
+        function submitCustomTopic() {
+            const category = document.getElementById('newTopicCategory').value;
+            const name = document.getElementById('newTopicName').value;
+            const desc = document.getElementById('newTopicDesc').value;
+            const cost = document.getElementById('newTopicCost').value;
+            const resources = document.getElementById('newTopicResources').value.split(',').map(s => s.trim());
+            const inputsStr = document.getElementById('newTopicInputs').value;
+
+            if (!name || !desc) {
+                alert('Name and description are required');
+                return;
+            }
+
+            const topicKey = name.toLowerCase().replace(/\s+/g, '_');
+            const topicData = {
+                name: name,
+                description: desc,
+                estimated_cost: cost || 'Variable',
+                deploy_time: '45-60s',
+                resources: resources.filter(r => r),
+                template_type: 'arm',
+                inputs: inputsStr ? JSON.parse(inputsStr) : {}
+            };
+
+            // Add to local data
+            categories[category].topics[topicKey] = topicData;
+
+            // Add card to grid
+            const grid = document.getElementById(`grid-${category}`);
+            const card = createTopicCard(category, topicKey, topicData);
+            grid.appendChild(card);
+
+            // Update stats
+            updateStats();
+            renderCategories();
+
+            // Close modal
+            document.getElementById('addTopicModal').classList.remove('active');
+
+            // Clear form
+            document.getElementById('newTopicName').value = '';
+            document.getElementById('newTopicDesc').value = '';
+            document.getElementById('newTopicCost').value = '';
+            document.getElementById('newTopicResources').value = '';
+            document.getElementById('newTopicInputs').value = '';
+
+            // Optionally send to backend
+            fetch('/api/custom-topic', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category: category,
+                    topic_key: topicKey,
+                    topic_data: topicData
+                })
+            });
+        }
+
+        // Close modals on overlay click
+        document.getElementById('addTopicModal').onclick = function(e) {
+            if (e.target === this) this.classList.remove('active');
+        };
+
+        document.getElementById('resultModal').onclick = function(e) {
+            if (e.target === this) this.classList.remove('active');
+        };
+
+        // Initialize
+        init();
+
+        // Select first category by default
+        selectCategory(Object.keys(categories)[0]);
+    </script>
+</body>
+</html>

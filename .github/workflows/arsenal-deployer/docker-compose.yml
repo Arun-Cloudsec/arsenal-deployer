@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  arsenal:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - FLASK_ENV=development
+      - AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+    volumes:
+      - .:/app
+      - /tmp:/tmp
+    command: flask run --host=0.0.0.0 --port=8080 --reload
+
+  # Optional: Add Redis for caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

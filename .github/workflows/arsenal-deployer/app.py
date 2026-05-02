@@ -1,83 +1,10 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify
 import json
 import os
 import subprocess
 import uuid
-import threading
-import secrets as _secrets
-from functools import wraps
-
-import bcrypt
 
 app = Flask(__name__)
-
-# Session signing key. In production, set SECRET_KEY as an env var so sessions
-# survive container restarts. The fallback only protects local dev.
-app.secret_key = os.getenv("SECRET_KEY") or _secrets.token_hex(32)
-
-# Auth config — set these as env vars in the workflow.
-ARSENAL_USERNAME = os.getenv("ARSENAL_USERNAME", "admin")
-ARSENAL_PASSWORD_HASH = os.getenv("ARSENAL_PASSWORD_HASH", "")  # bcrypt hash
-
-
-def require_auth(f):
-    """Gate a route behind a logged-in session.
-    HTML routes redirect to /login. API routes return 401 JSON.
-    """
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if not session.get("authenticated"):
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "authentication required"}), 401
-            return redirect(url_for("login"))
-        return f(*args, **kwargs)
-    return wrapper
-
-
-# =============================================================================
-# AZURE CLI AUTHENTICATION
-# Uses the container's system-assigned managed identity. The identity is
-# attached when the container is created (see deploy.yml). After login, the
-# az CLI caches credentials inside the container, so subsequent calls work.
-# =============================================================================
-
-_az_login_lock = threading.Lock()
-_az_logged_in = False
-
-
-def ensure_az_login():
-    """Idempotent: log in via managed identity once per container lifetime."""
-    global _az_logged_in
-    if _az_logged_in:
-        return
-
-    with _az_login_lock:
-        if _az_logged_in:
-            return
-
-        result = subprocess.run(
-            ["az", "login", "--identity", "--output", "none"],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"az login --identity failed (is a managed identity attached "
-                f"and granted Contributor?): {result.stderr.strip()}"
-            )
-
-        sub_id = os.getenv("AZURE_SUBSCRIPTION_ID")
-        if sub_id:
-            sub_result = subprocess.run(
-                ["az", "account", "set", "--subscription", sub_id, "--output", "none"],
-                capture_output=True, text=True, timeout=15
-            )
-            if sub_result.returncode != 0:
-                raise RuntimeError(
-                    f"az account set failed: {sub_result.stderr.strip()}"
-                )
-
-        _az_logged_in = True
-
 
 # =============================================================================
 # ARSENAL KNOWLEDGE BASE: 8 Categories with Expandable Topics
@@ -574,24 +501,11 @@ ARSENAL_CATEGORIES = {
 # =============================================================================
 
 def generate_arm_template(category, topic_key, topic_data, custom_inputs):
-    """Generate a complete ARM template based on topic configuration and user inputs.
-
-    Every template:
-      - Declares a base set of parameters (location, environmentName) plus all the
-        per-topic inputs declared in topic_data['inputs'].
-      - Includes a single 'marker' storage account tagged with category/topic/deploy_id
-        so the user sees a concrete resource in the portal after deployment.
-      - Is valid for all 32+ topics with no per-category special-casing.
-
-    Returning a 'marker' resource (rather than per-topic real infra like AKS, ML
-    Workspace, etc.) keeps demo deployments fast (~30s), region-portable, cheap,
-    and free of subscription-quota gotchas. Swap in topic-specific resources here
-    when you're ready to deploy real infrastructure.
-    """
+    """Generate a complete ARM template based on topic configuration and user inputs."""
     deploy_id = str(uuid.uuid4())[:8]
     base_name = f"{category}-{topic_key}-{deploy_id}"
 
-    # Base ARM template — always-declared parameters + outputs.
+    # Base ARM template structure
     template = {
         "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
         "contentVersion": "1.0.0.0",
@@ -603,39 +517,14 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
             },
             "environmentName": {
                 "type": "string",
-                "defaultValue": custom_inputs.get('environment', 'production')
+                "defaultValue": "production"
             }
         },
         "variables": {
             "uniqueSuffix": deploy_id,
-            "baseName": base_name,
-            # Storage account names: 3-24 chars, lowercase letters + digits only.
-            # uniqueString() yields a deterministic 13-char string per (rg, suffix).
-            "storageAccountName": "[concat('arsenal', uniqueString(resourceGroup().id, variables('uniqueSuffix')))]"
+            "baseName": base_name
         },
-        "resources": [
-            {
-                "type": "Microsoft.Storage/storageAccounts",
-                "apiVersion": "2023-01-01",
-                "name": "[variables('storageAccountName')]",
-                "location": "[parameters('location')]",
-                "kind": "StorageV2",
-                "sku": {"name": "Standard_LRS"},
-                "properties": {
-                    "minimumTlsVersion": "TLS1_2",
-                    "allowBlobPublicAccess": False,
-                    "supportsHttpsTrafficOnly": True
-                },
-                "tags": {
-                    "arsenal": "true",
-                    "category": category,
-                    "topic": topic_key,
-                    "topicName": topic_data.get('name', topic_key),
-                    "deployId": deploy_id,
-                    "environment": "[parameters('environmentName')]"
-                }
-            }
-        ],
+        "resources": [],
         "outputs": {
             "deploymentId": {
                 "type": "string",
@@ -644,39 +533,49 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
             "resourceGroupName": {
                 "type": "string",
                 "value": "[resourceGroup().name]"
-            },
-            "storageAccountName": {
-                "type": "string",
-                "value": "[variables('storageAccountName')]"
-            },
-            "topicDeployed": {
-                "type": "string",
-                "value": topic_data.get('name', topic_key)
             }
         }
     }
 
-    # Add each topic input as a template parameter so deploy() can pass user values.
-    # This way the template's allowed-parameter list always matches what the UI sends.
+    # Add user inputs as parameters
     for input_key, input_config in topic_data.get('inputs', {}).items():
         param_type = "string"
-        input_type = input_config.get('type')
-        if input_type == 'number':
+        if input_config['type'] == 'number':
             param_type = "int"
-        elif input_type == 'checkbox':
+        elif input_config['type'] == 'checkbox':
             param_type = "bool"
-        elif input_type == 'multi_select':
-            param_type = "array"
 
-        param_spec = {
+        template['parameters'][input_key] = {
             "type": param_type,
-            "defaultValue": input_config.get('default', '' if param_type == 'string' else (0 if param_type == 'int' else (False if param_type == 'bool' else [])))
+            "defaultValue": custom_inputs.get(input_key, input_config.get('default'))
         }
-        if 'options' in input_config and input_type == 'select':
-            # Restrict to the listed options when provided.
-            param_spec["allowedValues"] = input_config['options']
 
-        template['parameters'][input_key] = param_spec
+    # Add category-specific resources
+    if category == "technology":
+        template['resources'].append({
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2023-03-01",
+            "name": "[concat(variables('baseName'), '-vm')]",
+            "location": "[parameters('location')]",
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "[if(equals(parameters('node_size'), ''), 'Standard_D4s_v3', parameters('node_size'))]"
+                },
+                "osProfile": {
+                    "computerName": "[variables('baseName')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "Canonical",
+                        "offer": "0001-com-ubuntu-server-jammy",
+                        "sku": "22_04-lts-gen2",
+                        "version": "latest"
+                    }
+                }
+            }
+        })
 
     return template, base_name, deploy_id
 
@@ -685,68 +584,17 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
 # FLASK ROUTES
 # =============================================================================
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    """Login page. POST validates credentials against env-configured user."""
-    if session.get("authenticated"):
-        return redirect(url_for("index"))
-
-    error = None
-    if request.method == 'POST':
-        username = (request.form.get('username') or '').strip()
-        password = request.form.get('password') or ''
-
-        valid = False
-        if ARSENAL_PASSWORD_HASH and username == ARSENAL_USERNAME:
-            try:
-                valid = bcrypt.checkpw(
-                    password.encode('utf-8'),
-                    ARSENAL_PASSWORD_HASH.encode('utf-8')
-                )
-            except (ValueError, TypeError):
-                valid = False
-
-        if valid:
-            session.clear()
-            session['authenticated'] = True
-            session['username'] = username
-            return redirect(url_for('index'))
-
-        error = 'Invalid username or password'
-
-    return render_template('login.html', error=error), (401 if error else 200)
-
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
-
-@app.route('/auth/whoami')
-def whoami():
-    if not session.get('authenticated'):
-        return jsonify({'authenticated': False})
-    return jsonify({
-        'authenticated': True,
-        'username': session.get('username')
-    })
-
-
 @app.route('/')
-@require_auth
 def index():
     return render_template('index.html', categories=ARSENAL_CATEGORIES)
 
 
 @app.route('/api/categories')
-@require_auth
 def get_categories():
     return jsonify(ARSENAL_CATEGORIES)
 
 
 @app.route('/api/deploy', methods=['POST'])
-@require_auth
 def deploy():
     data = request.json
     category = data.get('category')
@@ -777,40 +625,14 @@ def deploy():
     deployment_name = f"arsenal-{deploy_id}"
 
     try:
-        # Make sure the CLI inside this container is authenticated.
-        ensure_az_login()
-
         # Create resource group
-        rg_result = subprocess.run([
+        subprocess.run([
             "az", "group", "create",
             "--name", rg_name,
             "--location", "eastus",
             "--tags", f"arsenal=true category={category} topic={topic} deploy_id={deploy_id}",
             "--output", "none"
-        ], capture_output=True, text=True, timeout=30)
-        if rg_result.returncode != 0:
-            raise Exception(f"az group create failed: {rg_result.stderr.strip()}")
-
-        # Build the --parameters list dynamically from the parameters the
-        # generated template actually declares. This prevents "unrecognized
-        # parameter" errors regardless of which topic the user picked.
-        declared_params = template.get('parameters', {})
-        parameter_args = []
-        for param_name, param_spec in declared_params.items():
-            if param_name not in custom_inputs:
-                # No user value — let ARM use the template's defaultValue.
-                continue
-            value = custom_inputs[param_name]
-            # Coerce Python types to CLI-friendly strings.
-            if isinstance(value, bool):
-                value_str = 'true' if value else 'false'
-            elif isinstance(value, (list, dict)):
-                value_str = json.dumps(value)
-            elif value is None:
-                continue
-            else:
-                value_str = str(value)
-            parameter_args.extend(['--parameters', f"{param_name}={value_str}"])
+        ], check=True, timeout=30)
 
         # Deploy ARM template
         deploy_result = subprocess.run([
@@ -818,9 +640,10 @@ def deploy():
             "--resource-group", rg_name,
             "--name", deployment_name,
             "--template-file", template_file,
-            *parameter_args,
+            "--parameters", f"adminUsername={custom_inputs.get('adminUsername', 'azureuser')}",
+            "--parameters", f"adminPassword={custom_inputs.get('adminPassword', 'ArsenalDeploy123!')}",
             "--output", "json"
-        ], capture_output=True, text=True, timeout=300)
+        ], capture_output=True, text=True, timeout=120)
 
         if deploy_result.returncode != 0:
             raise Exception(deploy_result.stderr)
@@ -859,7 +682,6 @@ def deploy():
 
 
 @app.route('/api/custom-topic', methods=['POST'])
-@require_auth
 def add_custom_topic():
     """Allow users to add custom topics to any category."""
     data = request.json
@@ -879,11 +701,9 @@ def add_custom_topic():
 
 
 @app.route('/api/status/<deploy_id>')
-@require_auth
 def check_status(deploy_id):
     """Check deployment status."""
     try:
-        ensure_az_login()
         result = subprocess.run([
             "az", "deployment", "group", "list",
             "--resource-group", f"arsenal-*-{deploy_id}",
@@ -902,11 +722,9 @@ def check_status(deploy_id):
 
 
 @app.route('/api/destroy/<deploy_id>', methods=['POST'])
-@require_auth
 def destroy(deploy_id):
     """Destroy a deployment."""
     try:
-        ensure_az_login()
         result = subprocess.run([
             "az", "group", "list",
             "--query", f"[?contains(name, 'arsenal-') && contains(name, '{deploy_id}')].name",

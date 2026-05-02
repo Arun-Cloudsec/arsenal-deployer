@@ -1,0 +1,8 @@
+# Terraform Variables for Arsenal Deployer
+# Copy this file to terraform.tfvars and customize
+
+project_name = "my-company"
+environment  = "prod"
+location     = "eastus"
+category     = "technology"
+topic        = "ai_ml_platform"
