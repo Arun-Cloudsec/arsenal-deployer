@@ -1,9 +1,9 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y     curl apt-transport-https lsb-release gnupg ca-certificates     && curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.asc.gpg     && echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/azure-cli.list     && apt-get update     && apt-get install -y azure-cli     && rm -rf /var/lib/apt/lists/*
+# Install system dependencies and Azure CLI via official script
+RUN apt-get update && apt-get install -y     curl ca-certificates     && curl -sL https://aka.ms/InstallAzureCLIDeb | bash     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
