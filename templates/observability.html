@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Observability · Arsenal Deployer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-0: #07101F;
+    --bg-1: #0A1428;
+    --bg-2: #0F1B33;
+    --bg-3: #16263E;
+    --line: rgba(143, 163, 196, 0.18);
+    --line-strong: rgba(143, 163, 196, 0.32);
+    --grid: rgba(6, 182, 212, 0.06);
+
+    --ink: #E8F0FF;
+    --ink-2: #C5D2E8;
+    --ink-dim: #8FA3C4;
+    --ink-mute: #5A6E8E;
+
+    --cyan: #06B6D4;
+    --cyan-glow: rgba(6, 182, 212, 0.55);
+    --lime: #84CC16;
+    --lime-glow: rgba(132, 204, 22, 0.55);
+    --amber: #F59E0B;
+    --pink: #EC4899;
+    --violet: #A78BFA;
+    --danger: #F87171;
+    --warn: #FACC15;
+
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Space Grotesk', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg-0); color: var(--ink); font-family: var(--sans); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  body::before, body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  body::before {
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at top, #000 30%, transparent 90%);
+  }
+  body::after {
+    background:
+      radial-gradient(circle at 15% 10%, rgba(6,182,212,0.10), transparent 35%),
+      radial-gradient(circle at 85% 60%, rgba(132,204,22,0.07), transparent 40%);
+  }
+  .wrap { position: relative; z-index: 1; max-width: 1500px; margin: 0 auto; padding: 28px 28px 80px; }
+
+  /* TOP BAR */
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 18px; font-weight: 800; color: var(--ink); }
+  .brand .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 10px var(--lime-glow); animation: pulse 1.6s ease-in-out infinite; }
+  .nav { display: flex; gap: 4px; align-items: center; }
+  .nav a { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink-dim); text-decoration: none; padding: 8px 14px; border-radius: 4px; border: 1px solid transparent; transition: all 0.18s; }
+  .nav a:hover { color: var(--ink); border-color: var(--line); }
+  .nav a.active { color: var(--cyan); border-color: rgba(6,182,212,0.4); background: rgba(6,182,212,0.08); }
+  .nav .logout { color: var(--danger); }
+
+  /* HEADER */
+  .header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 24px; }
+  .header h1 { font-family: var(--mono); font-size: clamp(24px, 3.4vw, 36px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; color: var(--ink); }
+  .header h1 .accent { color: var(--cyan); }
+  .header .meta { color: var(--ink-dim); margin-top: 8px; font-family: var(--mono); font-size: 12px; }
+  .header .meta b { color: var(--cyan); font-weight: 700; }
+  .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btn { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 9px 14px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg-2); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; transition: all 0.18s; }
+  .btn:hover { border-color: var(--cyan); background: rgba(6,182,212,0.08); }
+  .btn.primary { background: linear-gradient(135deg, #7C3AED, #06B6D4); border: none; color: #fff; }
+  .btn.primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(124,58,237,0.25); }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+  /* LAYOUT GRID: main + chat sidebar */
+  .layout { display: grid; grid-template-columns: 1fr 380px; gap: 20px; align-items: start; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+
+  .stack { display: flex; flex-direction: column; gap: 18px; }
+
+  /* SECTION */
+  .section { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; }
+  .section h3 { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .section h3 .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent, var(--cyan)); box-shadow: 0 0 6px var(--accent, var(--cyan)); }
+
+  /* SOURCES */
+  .sources { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .source { padding: 14px 14px 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg-1); position: relative; }
+  .source.online::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--lime); box-shadow: 0 0 6px var(--lime-glow); }
+  .source.offline::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--ink-mute); }
+  .source .lbl { font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 4px; }
+  .source .name { font-family: var(--mono); font-size: 12px; color: var(--ink); margin-bottom: 6px; word-break: break-all; }
+  .source .status { font-family: var(--mono); font-size: 10px; }
+  .source .status.on { color: var(--lime); }
+  .source .status.off { color: var(--ink-mute); }
+  @media (max-width: 760px) { .sources { grid-template-columns: repeat(2, 1fr); } }
+
+  /* METRICS */
+  .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .metric { padding: 14px 16px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg-1); position: relative; }
+  .metric::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--accent, var(--cyan)); }
+  .metric .lbl { font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 4px; }
+  .metric .num { font-family: var(--mono); font-size: 22px; font-weight: 800; color: var(--accent, var(--cyan)); letter-spacing: -0.02em; line-height: 1.1; }
+  .metric .sub { font-size: 10px; color: var(--ink-mute); margin-top: 4px; font-family: var(--mono); }
+  @media (max-width: 760px) { .metrics { grid-template-columns: repeat(2, 1fr); } }
+
+  /* CHART */
+  .chart-wrap { background: var(--bg-1); border: 1px solid var(--line); border-radius: 5px; padding: 14px; }
+  .chart-wrap svg { display: block; width: 100%; height: 200px; }
+
+  /* ACTIVITY LOG */
+  .activity { font-family: var(--mono); font-size: 11px; max-height: 320px; overflow-y: auto; }
+  .activity .row { display: grid; grid-template-columns: 90px 100px 1fr; gap: 10px; padding: 9px 6px; border-bottom: 1px solid var(--line); align-items: center; }
+  .activity .row:last-child { border-bottom: 0; }
+  .activity .ts { color: var(--ink-mute); }
+  .activity .stat { font-weight: 700; }
+  .activity .stat.succeeded { color: var(--lime); }
+  .activity .stat.failed { color: var(--danger); }
+  .activity .stat.started, .activity .stat.accepted { color: var(--cyan); }
+  .activity .stat.warning { color: var(--warn); }
+  .activity .op { color: var(--ink-2); }
+  .activity .res { color: var(--ink-mute); font-size: 10px; margin-left: 4px; }
+  .activity::-webkit-scrollbar { width: 6px; }
+  .activity::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 3px; }
+
+  /* CUSTOM QUERY RUNNER */
+  .kql { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .kql .row1 { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .kql select, .kql input[type=text] {
+    font-family: var(--mono); font-size: 11px; color: var(--ink); background: var(--bg-0); border: 1px solid var(--line);
+    border-radius: 3px; padding: 7px 10px; outline: none;
+  }
+  .kql textarea {
+    font-family: var(--mono); font-size: 12px; color: var(--ink); background: var(--bg-0); border: 1px solid var(--line);
+    border-radius: 4px; padding: 12px; min-height: 110px; resize: vertical; line-height: 1.5; outline: none;
+  }
+  .kql textarea:focus, .kql select:focus, .kql input:focus { border-color: var(--cyan); }
+  .kql-result { font-family: var(--mono); font-size: 11px; max-height: 280px; overflow: auto; background: var(--bg-0); border: 1px solid var(--line); border-radius: 4px; padding: 10px; margin-top: 8px; }
+  .kql-result table { width: 100%; border-collapse: collapse; }
+  .kql-result th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line-strong); color: var(--cyan); font-weight: 700; }
+  .kql-result td { padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--ink-2); word-break: break-word; }
+  .kql-result .err { color: var(--danger); }
+  .kql-result .empty { color: var(--ink-mute); font-style: italic; padding: 12px; }
+
+  /* AI CHAT SIDEBAR */
+  .chat { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 0; display: flex; flex-direction: column; height: calc(100vh - 120px); position: sticky; top: 20px; min-height: 600px; }
+  .chat-head { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+  .chat-head .icon { width: 28px; height: 28px; border-radius: 6px; background: linear-gradient(135deg, #7C3AED, #06B6D4); display: grid; place-items: center; font-size: 14px; }
+  .chat-head h3 { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--ink); margin: 0; }
+  .chat-head .sub { font-size: 10px; color: var(--ink-dim); font-family: var(--mono); }
+  .chat-stream { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .chat-stream::-webkit-scrollbar { width: 5px; }
+  .chat-stream::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 3px; }
+  .msg { display: flex; flex-direction: column; gap: 4px; max-width: 95%; }
+  .msg.user { align-self: flex-end; align-items: flex-end; }
+  .msg.assistant { align-self: flex-start; }
+  .msg .who { font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-mute); }
+  .msg.user .who { color: var(--cyan); }
+  .msg.assistant .who { color: var(--lime); }
+  .msg .body { padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.55; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; }
+  .msg.user .body { background: rgba(6,182,212,0.10); border: 1px solid rgba(6,182,212,0.28); color: var(--ink); }
+  .msg.assistant .body { background: var(--bg-1); border: 1px solid var(--line); }
+  .msg.error .body { background: rgba(248,113,113,0.10); border-color: rgba(248,113,113,0.4); color: var(--danger); }
+  .msg .body code { background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 3px; font-family: var(--mono); font-size: 12px; color: var(--cyan); }
+  .msg .body pre { background: var(--bg-0); border: 1px solid var(--line); border-radius: 4px; padding: 10px; margin: 6px 0; overflow-x: auto; }
+  .msg .body pre code { background: transparent; padding: 0; color: var(--lime); font-size: 11px; }
+  .chat-input { padding: 14px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: flex-end; }
+  .chat-input textarea {
+    flex: 1; font-family: var(--mono); font-size: 12px; color: var(--ink); background: var(--bg-0);
+    border: 1px solid var(--line); border-radius: 4px; padding: 10px; min-height: 42px; max-height: 140px; resize: none; outline: none;
+  }
+  .chat-input textarea:focus { border-color: var(--cyan); }
+  .chat-input button {
+    background: linear-gradient(135deg, #7C3AED, #06B6D4); border: none; color: #fff; padding: 10px 14px; border-radius: 4px;
+    font-family: var(--mono); font-size: 12px; font-weight: 700; cursor: pointer; transition: transform 0.15s;
+  }
+  .chat-input button:hover { transform: translateY(-1px); }
+  .chat-input button[disabled] { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .typing-dot {
+    display: inline-flex; gap: 3px;
+  }
+  .typing-dot span {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    animation: bounce 1.2s infinite ease-in-out;
+  }
+  .typing-dot span:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dot span:nth-child(3) { animation-delay: 0.3s; }
+
+  /* TOAST */
+  .toast-stack { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 100; max-width: 380px; }
+  .toast { font-family: var(--mono); font-size: 12px; padding: 12px 16px; border-radius: 5px; border: 1px solid; background: var(--bg-2); animation: slideIn 0.3s; display: flex; gap: 10px; }
+  .toast.ok { border-color: rgba(132,204,22,0.5); color: var(--lime); }
+  .toast.err { border-color: rgba(248,113,113,0.5); color: var(--danger); }
+  .toast.info { border-color: rgba(6,182,212,0.5); color: var(--cyan); }
+
+  /* Loading + empty */
+  .loading { padding: 40px; text-align: center; color: var(--ink-dim); font-family: var(--mono); font-size: 12px; }
+  .spinner-mini { width: 18px; height: 18px; border: 2px solid var(--bg-3); border-top-color: var(--cyan); border-radius: 50%; animation: spin 0.9s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
+
+  @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.6; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand"><span class="pulse"></span>ARSENAL DEPLOYER</div>
+    <nav class="nav">
+      <a href="/">Deploy</a>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/dashboard" class="active">Observability</a>
+      <a href="/logout" class="logout">Sign out</a>
+    </nav>
+  </div>
+
+  <div class="header">
+    <div>
+      <h1>Observability <span class="accent">Hub</span></h1>
+      <div class="meta" id="metaBar">Loading deployment <b id="deployIdLabel">{{ deploy_id }}</b>…</div>
+    </div>
+    <div class="header-actions">
+      <a class="btn" href="/dashboard">← Dashboard</a>
+      <a class="btn" id="webAppLink" target="_blank" rel="noopener" style="display:none;">↗ Open Web App</a>
+      <a class="btn" id="portalLink" target="_blank" rel="noopener" style="display:none;">↗ Azure Portal</a>
+      <button class="btn primary" id="refreshBtn">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="stack">
+
+      <!-- SOURCES -->
+      <div class="section">
+        <h3><span class="badge-dot" style="--accent: var(--lime);"></span>Telemetry Sources</h3>
+        <div class="sources" id="sources">
+          <div class="source"><div class="lbl">Loading…</div></div>
+          <div class="source"><div class="lbl">Loading…</div></div>
+          <div class="source"><div class="lbl">Loading…</div></div>
+          <div class="source"><div class="lbl">Loading…</div></div>
+        </div>
+      </div>
+
+      <!-- KEY METRICS -->
+      <div class="section">
+        <h3><span class="badge-dot" style="--accent: var(--cyan);"></span>Key Metrics · last 1 hour</h3>
+        <div class="metrics" id="metrics">
+          <div class="metric" style="--accent: var(--cyan);"><div class="lbl">Requests</div><div class="num">—</div><div class="sub">app insights</div></div>
+          <div class="metric" style="--accent: var(--danger);"><div class="lbl">Failure rate</div><div class="num">—</div><div class="sub">app insights</div></div>
+          <div class="metric" style="--accent: var(--amber);"><div class="lbl">Avg ms</div><div class="num">—</div><div class="sub">app insights</div></div>
+          <div class="metric" style="--accent: var(--violet);"><div class="lbl">P95 ms</div><div class="num">—</div><div class="sub">app insights</div></div>
+          <div class="metric" style="--accent: var(--lime);"><div class="lbl">Logs 7d</div><div class="num">—</div><div class="sub">log analytics gb</div></div>
+        </div>
+      </div>
+
+      <!-- TIME SERIES -->
+      <div class="section">
+        <h3><span class="badge-dot" style="--accent: var(--cyan);"></span>Requests · last 24 hours</h3>
+        <div class="chart-wrap" id="chartWrap">
+          <div class="loading"><span class="spinner-mini"></span>Querying App Insights…</div>
+        </div>
+      </div>
+
+      <!-- ACTIVITY LOG -->
+      <div class="section">
+        <h3><span class="badge-dot" style="--accent: var(--amber);"></span>Activity Log · last 25 events</h3>
+        <div class="activity" id="activity">
+          <div class="loading"><span class="spinner-mini"></span>Fetching activity log…</div>
+        </div>
+      </div>
+
+      <!-- CUSTOM KQL -->
+      <div class="section">
+        <h3><span class="badge-dot" style="--accent: var(--violet);"></span>Run a custom KQL query</h3>
+        <div class="kql">
+          <div class="row1">
+            <select id="kqlTarget">
+              <option value="app_insights">App Insights</option>
+              <option value="log_analytics">Log Analytics</option>
+            </select>
+            <select id="kqlTimespan">
+              <option value="PT15M">last 15m</option>
+              <option value="PT1H" selected>last 1h</option>
+              <option value="PT6H">last 6h</option>
+              <option value="PT24H">last 24h</option>
+              <option value="P7D">last 7d</option>
+            </select>
+            <button class="btn primary" id="kqlRun">▶ Run query</button>
+            <button class="btn" id="kqlClear">Clear</button>
+            <span style="color: var(--ink-mute); font-family: var(--mono); font-size: 11px;">
+              Tip: results are tabular. Try <code>requests | take 10</code>
+            </span>
+          </div>
+          <textarea id="kql" placeholder="requests
+| summarize count = count(), failed = countif(success == false) by bin(timestamp, 5m)
+| order by timestamp asc"></textarea>
+          <div class="kql-result" id="kqlResult" style="display:none;"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- AI CHAT -->
+    <div class="chat">
+      <div class="chat-head">
+        <div class="icon">🤖</div>
+        <div>
+          <h3>AI Assistant</h3>
+          <div class="sub">Powered by Claude · context-aware</div>
+        </div>
+      </div>
+      <div class="chat-stream" id="chatStream">
+        <div class="msg assistant">
+          <div class="who">Assistant</div>
+          <div class="body">Hi — I have full context on this deployment. Ask me about errors, latency, log analysis, or paste a KQL query you want help writing.</div>
+        </div>
+      </div>
+      <div class="chat-input">
+        <textarea id="chatInput" placeholder="Ask about your stack… (Enter = send, Shift+Enter = newline)" rows="1"></textarea>
+        <button id="chatSend" title="Send (Enter)">↑</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast-stack" id="toasts"></div>
+
+<script>
+const DEPLOY_ID = {{ deploy_id|tojson }};
+const $ = (id) => document.getElementById(id);
+
+function toast(message, kind = 'info', duration = 4000) {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  const x = kind === 'ok' ? '✓' : kind === 'err' ? '✗' : 'ℹ';
+  el.innerHTML = `<span>${x}</span><span>${message}</span>`;
+  $('toasts').appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, duration);
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderMarkdown(text) {
+  // Tiny markdown: code fences, inline code, bold, line breaks
+  let html = escapeHtml(text);
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre><code data-lang="${escapeHtml(lang)}">${code}</code></pre>`);
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  return html.replace(/\n/g, '<br>');
+}
+
+// --- INFO ---
+async function loadInfo() {
+  try {
+    const r = await fetch(`/api/observability/${DEPLOY_ID}/info`);
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${r.status}`);
+    }
+    const info = await r.json();
+    $('metaBar').innerHTML = `RG <b>${escapeHtml(info.rg_name)}</b> · region <b>${escapeHtml(info.rg_location)}</b> · state <b>${escapeHtml(info.provisioning_state || '?')}</b>`;
+    $('portalLink').href = `https://portal.azure.com/#@/resource/subscriptions/SUB/resourceGroups/${encodeURIComponent(info.rg_name)}`;
+    $('portalLink').style.display = '';
+
+    if (info.sources.web_app && info.sources.web_app.url) {
+      $('webAppLink').href = info.sources.web_app.url;
+      $('webAppLink').style.display = '';
+    }
+
+    // Render sources panel
+    const sources = [
+      { lbl: 'Log Analytics', name: info.sources.log_analytics.name || '—', online: info.sources.log_analytics.present, status: info.sources.log_analytics.present ? 'ingesting' : 'not deployed' },
+      { lbl: 'App Insights', name: info.sources.app_insights.name || '—', online: info.sources.app_insights.present, status: info.sources.app_insights.present ? 'collecting' : 'not deployed' },
+      { lbl: 'Web App', name: info.sources.web_app.name || '—', online: info.sources.web_app.present, status: info.sources.web_app.present ? 'instrumented' : 'not deployed' },
+      { lbl: 'Activity Log', name: info.rg_name, online: true, status: 'streaming' },
+    ];
+    $('sources').innerHTML = sources.map(s => `
+      <div class="source ${s.online ? 'online' : 'offline'}">
+        <div class="lbl">${escapeHtml(s.lbl)}</div>
+        <div class="name">${escapeHtml(s.name)}</div>
+        <div class="status ${s.online ? 'on' : 'off'}">${s.online ? '● ' : '○ '}${escapeHtml(s.status)}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    toast(`Couldn't load deployment info: ${err.message}`, 'err');
+    $('metaBar').textContent = `Error: ${err.message}`;
+  }
+}
+
+// --- METRICS + CHART ---
+async function loadMetrics() {
+  try {
+    const r = await fetch(`/api/observability/${DEPLOY_ID}/metrics`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const m = await r.json();
+    const tiles = $('metrics').children;
+    const rs = m.request_summary || {};
+    tiles[0].querySelector('.num').textContent = rs.count_1h ?? 0;
+    tiles[1].querySelector('.num').textContent = (rs.failure_rate_pct ?? 0).toFixed(1) + '%';
+    tiles[2].querySelector('.num').textContent = (rs.avg_ms ?? 0).toFixed(0);
+    tiles[3].querySelector('.num').textContent = (rs.p95_ms ?? 0).toFixed(0);
+    tiles[4].querySelector('.num').textContent = (m.log_volume_gb_7d ?? 0).toFixed(3);
+
+    renderChart(m.requests_timeseries || []);
+  } catch (err) {
+    toast(`Metrics query failed: ${err.message}`, 'err');
+  }
+}
+
+function renderChart(series) {
+  const wrap = $('chartWrap');
+  if (!series.length) {
+    wrap.innerHTML = `<div class="loading">No request data yet — visit your Web App to generate telemetry.</div>`;
+    return;
+  }
+  // Series shape: { timestamp: ISO, count: int, failed: int }
+  const W = wrap.clientWidth || 1000, H = 200, P = 30;
+  const counts = series.map(s => s.count || 0);
+  const max = Math.max(1, ...counts);
+  const xs = series.map((s, i) => P + (i / (series.length - 1 || 1)) * (W - 2 * P));
+  const ys = counts.map(c => H - P - (c / max) * (H - 2 * P));
+  const failedYs = series.map(s => H - P - ((s.failed || 0) / max) * (H - 2 * P));
+
+  // Area path for total requests
+  const totalPath = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+  const areaPath = totalPath + ` L${xs[xs.length-1].toFixed(1)},${H - P} L${xs[0].toFixed(1)},${H - P} Z`;
+  const failedPath = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${failedYs[i].toFixed(1)}`).join(' ');
+
+  // Y-axis ticks
+  const ticks = [0, max * 0.5, max].map(v => Math.round(v));
+
+  wrap.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.4"/>
+          <stop offset="100%" stop-color="#06B6D4" stop-opacity="0.02"/>
+        </linearGradient>
+      </defs>
+      ${ticks.map((t, i) => {
+        const y = H - P - (t / max) * (H - 2 * P);
+        return `<line x1="${P}" y1="${y}" x2="${W - P}" y2="${y}" stroke="rgba(143,163,196,0.12)" stroke-dasharray="3 4"/>
+                <text x="${P - 8}" y="${y + 3}" text-anchor="end" font-size="10" fill="#5A6E8E" font-family="JetBrains Mono">${t}</text>`;
+      }).join('')}
+      <path d="${areaPath}" fill="url(#g1)" />
+      <path d="${totalPath}" fill="none" stroke="#06B6D4" stroke-width="1.5" />
+      <path d="${failedPath}" fill="none" stroke="#F87171" stroke-width="1.2" stroke-dasharray="4 3" />
+      <text x="${W - P}" y="14" text-anchor="end" font-size="10" fill="#06B6D4" font-family="JetBrains Mono">— total requests</text>
+      <text x="${W - P}" y="28" text-anchor="end" font-size="10" fill="#F87171" font-family="JetBrains Mono">— failed</text>
+    </svg>
+  `;
+}
+
+// --- ACTIVITY ---
+async function loadActivity() {
+  try {
+    const r = await fetch(`/api/observability/${DEPLOY_ID}/activity`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const events = data.events || [];
+    const root = $('activity');
+    if (!events.length) {
+      root.innerHTML = `<div class="loading">No activity events yet.</div>`;
+      return;
+    }
+    root.innerHTML = events.map(e => {
+      const t = e.timestamp ? new Date(e.timestamp).toLocaleTimeString('en-US', { hour12: false }) : '—';
+      const statClass = (e.status || '').toLowerCase();
+      const op = (e.operation || '').replace(/^Microsoft\.\w+\//, '');
+      return `<div class="row">
+        <div class="ts">${escapeHtml(t)}</div>
+        <div class="stat ${escapeHtml(statClass)}">${escapeHtml(e.status || '?')}</div>
+        <div class="op">${escapeHtml(op)} <span class="res">${escapeHtml(e.resource || '')}</span></div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    toast(`Activity log failed: ${err.message}`, 'err');
+  }
+}
+
+// --- CUSTOM KQL ---
+$('kqlRun').addEventListener('click', async () => {
+  const kql = $('kql').value.trim();
+  if (!kql) { toast('Enter a KQL query first.', 'info'); return; }
+  const target = $('kqlTarget').value;
+  const timespan = $('kqlTimespan').value;
+  const btn = $('kqlRun'); btn.disabled = true; btn.textContent = '… running';
+  $('kqlResult').style.display = 'block';
+  $('kqlResult').innerHTML = `<div class="empty"><span class="spinner-mini"></span>Running query against ${target}…</div>`;
+  try {
+    const r = await fetch(`/api/observability/${DEPLOY_ID}/query`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ kql, target, timespan })
+    });
+    const data = await r.json();
+    if (data.error) {
+      $('kqlResult').innerHTML = `<div class="err">${escapeHtml(data.error)}</div>`;
+      return;
+    }
+    const rows = data.rows || [];
+    if (!rows.length) {
+      $('kqlResult').innerHTML = `<div class="empty">Query returned no rows.</div>`;
+      return;
+    }
+    const cols = data.columns && data.columns.length ? data.columns : Object.keys(rows[0] || {});
+    let html = '<table><thead><tr>';
+    cols.forEach(c => html += `<th>${escapeHtml(c)}</th>`);
+    html += '</tr></thead><tbody>';
+    rows.slice(0, 100).forEach(row => {
+      html += '<tr>';
+      cols.forEach(c => {
+        const v = (typeof row === 'object' && row !== null && !Array.isArray(row)) ? row[c] : (Array.isArray(row) ? row[cols.indexOf(c)] : '');
+        const display = v === null || v === undefined ? '<span style="color:var(--ink-mute)">∅</span>' : escapeHtml(typeof v === 'object' ? JSON.stringify(v) : v);
+        html += `<td>${display}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    if (rows.length > 100) html += `<div style="margin-top:8px;color:var(--ink-mute);">Showing 100 of ${rows.length} rows.</div>`;
+    $('kqlResult').innerHTML = html;
+  } catch (err) {
+    $('kqlResult').innerHTML = `<div class="err">${escapeHtml(err.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '▶ Run query';
+  }
+});
+$('kqlClear').addEventListener('click', () => { $('kql').value = ''; $('kqlResult').style.display = 'none'; });
+
+// --- AI CHAT ---
+const CHAT_HISTORY = [];
+
+function addMsg(role, text, isError = false) {
+  const stream = $('chatStream');
+  const el = document.createElement('div');
+  el.className = `msg ${role} ${isError ? 'error' : ''}`;
+  el.innerHTML = `
+    <div class="who">${role === 'user' ? 'You' : 'Assistant'}</div>
+    <div class="body">${role === 'assistant' ? renderMarkdown(text) : escapeHtml(text)}</div>
+  `;
+  stream.appendChild(el);
+  stream.scrollTop = stream.scrollHeight;
+  return el;
+}
+
+function addTyping() {
+  const stream = $('chatStream');
+  const el = document.createElement('div');
+  el.className = 'msg assistant';
+  el.id = '_typing';
+  el.innerHTML = `<div class="who">Assistant</div><div class="body"><span class="typing-dot"><span></span><span></span><span></span></span></div>`;
+  stream.appendChild(el);
+  stream.scrollTop = stream.scrollHeight;
+}
+function removeTyping() { const el = document.getElementById('_typing'); if (el) el.remove(); }
+
+async function sendChat() {
+  const input = $('chatInput');
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = '';
+  input.style.height = 'auto';
+  $('chatSend').disabled = true;
+
+  addMsg('user', message);
+  CHAT_HISTORY.push({ role: 'user', content: message });
+  addTyping();
+
+  try {
+    const r = await fetch(`/api/observability/${DEPLOY_ID}/chat`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ message, history: CHAT_HISTORY.slice(0, -1) })
+    });
+    const data = await r.json();
+    removeTyping();
+    if (!r.ok || data.error) {
+      addMsg('assistant', data.error || `HTTP ${r.status}`, true);
+      return;
+    }
+    addMsg('assistant', data.response || '(empty response)');
+    CHAT_HISTORY.push({ role: 'assistant', content: data.response || '' });
+  } catch (err) {
+    removeTyping();
+    addMsg('assistant', `Network error: ${err.message}`, true);
+  } finally {
+    $('chatSend').disabled = false;
+  }
+}
+
+$('chatSend').addEventListener('click', sendChat);
+$('chatInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+});
+$('chatInput').addEventListener('input', (e) => {
+  e.target.style.height = 'auto';
+  e.target.style.height = Math.min(140, e.target.scrollHeight) + 'px';
+});
+
+// --- BOOT + REFRESH ---
+async function loadAll() {
+  await Promise.all([loadInfo(), loadMetrics(), loadActivity()]);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadAll();
+  $('refreshBtn').addEventListener('click', () => { toast('Refreshing…', 'info', 1500); loadAll(); });
+});
+</script>
+
+</body>
+</html>

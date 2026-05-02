@@ -3,7 +3,16 @@ FROM python:3.11-slim-bookworm
 WORKDIR /app
 
 # Install system dependencies and Azure CLI via official script
-RUN apt-get update && apt-get install -y     curl ca-certificates     && curl -sL https://aka.ms/InstallAzureCLIDeb | bash     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    curl ca-certificates \
+    && curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pre-install the application-insights extension so KQL queries against
+# App Insights work without a first-run install delay. (log-analytics is
+# part of the core CLI, no extension needed.)
+RUN az config set extension.use_dynamic_install=yes_without_prompt \
+    && az extension add --name application-insights --yes
 
 # Install Python dependencies
 COPY requirements.txt .

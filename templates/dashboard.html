@@ -488,6 +488,7 @@ function renderCard(d) {
       <div class="res-summary">${resChips}</div>
 
       <div class="card-actions">
+        ${d.topic === 'observability_stack' ? `<a class="btn" href="/observability/${escapeHtml(d.deploy_id)}">📊 Observe</a>` : ''}
         <a class="btn ghost" href="${escapeHtml(d.portal_url)}" target="_blank" rel="noopener">↗ Portal</a>
         <button class="btn danger" data-destroy="${escapeHtml(d.deploy_id)}" data-rg="${escapeHtml(d.resource_group)}">✕ Destroy</button>
       </div>

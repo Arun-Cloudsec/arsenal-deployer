@@ -169,6 +169,7 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ARSENAL_USERNAME: ${{ secrets.ARSENAL_USERNAME }}
           ARSENAL_PASSWORD_HASH: ${{ secrets.ARSENAL_PASSWORD_HASH }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           DNS_LABEL="arsenal-${{ github.run_id }}"
 
@@ -196,10 +197,12 @@ jobs:
               "SECRET_KEY=$SECRET_KEY" \
               "ARSENAL_USERNAME=$ARSENAL_USERNAME" \
               "ARSENAL_PASSWORD_HASH=$ARSENAL_PASSWORD_HASH" \
+              "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
             --output none
 
           # Grant the container's managed identity Contributor on the subscription
           # so it can create resource groups and resources for user deployments.
+          # Requires the GitHub SP to have "User Access Administrator" on the subscription.
           PRINCIPAL_ID=$(az container show \
             --resource-group ${{ env.AZURE_RG }} \
             --name ${{ env.CONTAINER_NAME }} \
@@ -208,15 +211,61 @@ jobs:
 
           echo "Container managed identity principalId: $PRINCIPAL_ID"
 
-          # Wait briefly for the identity to propagate to AAD before assigning a role.
-          sleep 15
+          # Retry-with-backoff role assignment.
+          # AAD principals take time to propagate after creation, so the first
+          # attempt often fails with "PrincipalNotFound" — retry a few times.
+          assign_role() {
+            local principal=$1
+            local scope=$2
+            local role=$3
+            local err_file
+            err_file=$(mktemp)
 
-          az role assignment create \
-            --assignee-object-id $PRINCIPAL_ID \
-            --assignee-principal-type ServicePrincipal \
-            --role Contributor \
-            --scope /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }} \
-            --output none || echo "Role assignment may already exist, continuing."
+            for attempt in 1 2 3 4 5 6; do
+              if az role assignment create \
+                   --assignee-object-id "$principal" \
+                   --assignee-principal-type ServicePrincipal \
+                   --role "$role" \
+                   --scope "$scope" \
+                   --output none 2>"$err_file"; then
+                echo "✓ Role '$role' granted on attempt $attempt."
+                rm -f "$err_file"
+                return 0
+              fi
+
+              # "Already exists" is success — the SP already has this exact role here.
+              if grep -qiE "already exists|RoleAssignmentExists|conflict" "$err_file"; then
+                echo "✓ Role '$role' already assigned (idempotent)."
+                rm -f "$err_file"
+                return 0
+              fi
+
+              # AuthorizationFailed = the GitHub SP itself doesn't have permission
+              # to create role assignments. URA grant is missing — fail loudly.
+              if grep -qiE "AuthorizationFailed" "$err_file"; then
+                echo "::error::GitHub SP lacks permission to assign roles."
+                echo "::error::Grant 'User Access Administrator' on the subscription"
+                echo "::error::to the SP whose clientId is in AZURE_CLIENT_ID. See README."
+                cat "$err_file"
+                rm -f "$err_file"
+                return 1
+              fi
+
+              echo "Attempt $attempt failed (likely AAD propagation):"
+              cat "$err_file"
+              if [ $attempt -lt 6 ]; then
+                local delay=$((attempt * 10))
+                echo "Retrying in ${delay}s..."
+                sleep $delay
+              fi
+            done
+
+            echo "::error::Role assignment failed after 6 attempts."
+            rm -f "$err_file"
+            return 1
+          }
+
+          assign_role "$PRINCIPAL_ID" "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}" "Contributor"
 
           FQDN=$(az container show \
             --resource-group ${{ env.AZURE_RG }} \
@@ -321,6 +370,7 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ARSENAL_USERNAME: ${{ secrets.ARSENAL_USERNAME }}
           ARSENAL_PASSWORD_HASH: ${{ secrets.ARSENAL_PASSWORD_HASH }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           IMAGE="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           echo "Deploying image: $IMAGE"
@@ -387,10 +437,12 @@ jobs:
                 "SECRET_KEY=secretref:secret-key" \
                 "ARSENAL_USERNAME=secretref:arsenal-username" \
                 "ARSENAL_PASSWORD_HASH=secretref:arsenal-password-hash" \
+                "ANTHROPIC_API_KEY=secretref:anthropic-api-key" \
               --secrets \
                 "secret-key=$SECRET_KEY" \
                 "arsenal-username=$ARSENAL_USERNAME" \
                 "arsenal-password-hash=$ARSENAL_PASSWORD_HASH" \
+                "anthropic-api-key=$ANTHROPIC_API_KEY" \
               --output none
           fi
 
@@ -402,6 +454,7 @@ jobs:
             --output none
 
           # Grant Contributor on the subscription so the app can deploy stacks.
+          # Requires the GitHub SP to have "User Access Administrator" on the subscription.
           PRINCIPAL_ID=$(az containerapp show \
             --name arsenal-deployer-aca \
             --resource-group ${{ env.AZURE_RG }} \
@@ -409,14 +462,57 @@ jobs:
             --output tsv)
 
           echo "Container App managed identity principalId: $PRINCIPAL_ID"
-          sleep 15
 
-          az role assignment create \
-            --assignee-object-id $PRINCIPAL_ID \
-            --assignee-principal-type ServicePrincipal \
-            --role Contributor \
-            --scope /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }} \
-            --output none || echo "Role assignment may already exist, continuing."
+          # Retry-with-backoff role assignment (same logic as in the ACI job).
+          assign_role() {
+            local principal=$1
+            local scope=$2
+            local role=$3
+            local err_file
+            err_file=$(mktemp)
+
+            for attempt in 1 2 3 4 5 6; do
+              if az role assignment create \
+                   --assignee-object-id "$principal" \
+                   --assignee-principal-type ServicePrincipal \
+                   --role "$role" \
+                   --scope "$scope" \
+                   --output none 2>"$err_file"; then
+                echo "✓ Role '$role' granted on attempt $attempt."
+                rm -f "$err_file"
+                return 0
+              fi
+
+              if grep -qiE "already exists|RoleAssignmentExists|conflict" "$err_file"; then
+                echo "✓ Role '$role' already assigned (idempotent)."
+                rm -f "$err_file"
+                return 0
+              fi
+
+              if grep -qiE "AuthorizationFailed" "$err_file"; then
+                echo "::error::GitHub SP lacks permission to assign roles."
+                echo "::error::Grant 'User Access Administrator' on the subscription"
+                echo "::error::to the SP whose clientId is in AZURE_CLIENT_ID. See README."
+                cat "$err_file"
+                rm -f "$err_file"
+                return 1
+              fi
+
+              echo "Attempt $attempt failed (likely AAD propagation):"
+              cat "$err_file"
+              if [ $attempt -lt 6 ]; then
+                local delay=$((attempt * 10))
+                echo "Retrying in ${delay}s..."
+                sleep $delay
+              fi
+            done
+
+            echo "::error::Role assignment failed after 6 attempts."
+            rm -f "$err_file"
+            return 1
+          }
+
+          assign_role "$PRINCIPAL_ID" "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}" "Contributor"
 
           URL=$(az containerapp show \
             --name arsenal-deployer-aca \

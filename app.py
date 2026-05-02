@@ -19,6 +19,10 @@ app.secret_key = os.getenv("SECRET_KEY") or _secrets.token_hex(32)
 ARSENAL_USERNAME = os.getenv("ARSENAL_USERNAME", "admin")
 ARSENAL_PASSWORD_HASH = os.getenv("ARSENAL_PASSWORD_HASH", "")  # bcrypt hash
 
+# Anthropic (for the AI chat in /observability). Optional; chat returns 503 if absent.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+
 
 def require_auth(f):
     """Gate a route behind a logged-in session.
@@ -77,6 +81,132 @@ def ensure_az_login():
                 )
 
         _az_logged_in = True
+
+
+# =============================================================================
+# OBSERVABILITY HELPERS
+# Find Azure resources for an observability deployment and run KQL queries
+# against Application Insights / Log Analytics.
+# =============================================================================
+
+def find_observability_endpoints(deploy_id):
+    """Locate the LAW, App Insights, and Web App resources for a deploy_id.
+
+    Returns None if no resource group with that deploy_id tag exists.
+    """
+    ensure_az_login()
+
+    rg_result = subprocess.run([
+        "az", "group", "list",
+        "--query", f"[?tags.deploy_id=='{deploy_id}'] | [0]",
+        "--output", "json"
+    ], capture_output=True, text=True, timeout=15)
+
+    if rg_result.returncode != 0:
+        return None
+    try:
+        rg = json.loads(rg_result.stdout or "null")
+    except json.JSONDecodeError:
+        return None
+    if not rg:
+        return None
+
+    res_result = subprocess.run([
+        "az", "resource", "list",
+        "--resource-group", rg['name'],
+        "--output", "json"
+    ], capture_output=True, text=True, timeout=15)
+    try:
+        resources = json.loads(res_result.stdout or "[]") if res_result.returncode == 0 else []
+    except json.JSONDecodeError:
+        resources = []
+
+    def find_by_type(type_substring):
+        return next((r for r in resources if r.get('type', '').lower() == type_substring.lower()), None)
+
+    return {
+        'deploy_id': deploy_id,
+        'rg_name': rg.get('name'),
+        'rg_location': rg.get('location'),
+        'rg_tags': rg.get('tags') or {},
+        'rg_provisioning_state': (rg.get('properties') or {}).get('provisioningState'),
+        'workspace': find_by_type('Microsoft.OperationalInsights/workspaces'),
+        'app_insights': find_by_type('microsoft.insights/components'),
+        'web_app': find_by_type('Microsoft.Web/sites'),
+        'all_resources': resources,
+    }
+
+
+def query_app_insights(app_insights_id, kql, offset='PT1H'):
+    """Run KQL against App Insights. Returns {'columns', 'rows'} or {'error'}."""
+    if not app_insights_id:
+        return {'error': 'no application insights resource on this deployment', 'rows': []}
+    result = subprocess.run([
+        "az", "monitor", "app-insights", "query",
+        "--ids", app_insights_id,
+        "--analytics-query", kql,
+        "--offset", offset,
+        "--output", "json"
+    ], capture_output=True, text=True, timeout=45)
+    if result.returncode != 0:
+        return {'error': result.stderr.strip()[:500], 'rows': []}
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError as e:
+        return {'error': f'bad JSON from az: {e}', 'rows': []}
+    tables = data.get('tables', [])
+    if not tables:
+        return {'columns': [], 'rows': []}
+    cols = [c.get('name') for c in tables[0].get('columns', [])]
+    raw_rows = tables[0].get('rows', [])
+    return {'columns': cols, 'rows': [dict(zip(cols, r)) for r in raw_rows]}
+
+
+def query_log_analytics(workspace_id, kql, timespan='PT1H'):
+    """Run KQL against Log Analytics workspace."""
+    if not workspace_id:
+        return {'error': 'no log analytics workspace on this deployment', 'rows': []}
+    result = subprocess.run([
+        "az", "monitor", "log-analytics", "query",
+        "--workspace", workspace_id,
+        "--analytics-query", kql,
+        "--timespan", timespan,
+        "--output", "json"
+    ], capture_output=True, text=True, timeout=45)
+    if result.returncode != 0:
+        return {'error': result.stderr.strip()[:500], 'rows': []}
+    try:
+        rows = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError as e:
+        return {'error': f'bad JSON: {e}', 'rows': []}
+    return {'rows': rows if isinstance(rows, list) else []}
+
+
+def get_activity_log(rg_name, max_events=20):
+    """Recent activity log entries for a resource group (resource changes, status events)."""
+    result = subprocess.run([
+        "az", "monitor", "activity-log", "list",
+        "--resource-group", rg_name,
+        "--max-events", str(max_events),
+        "--output", "json"
+    ], capture_output=True, text=True, timeout=20)
+    if result.returncode != 0:
+        return []
+    try:
+        events = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+    out = []
+    for e in events:
+        out.append({
+            'timestamp': e.get('eventTimestamp'),
+            'caller': e.get('caller') or 'system',
+            'operation': (e.get('operationName') or {}).get('localizedValue') or (e.get('operationName') or {}).get('value', '?'),
+            'status': (e.get('status') or {}).get('localizedValue') or (e.get('status') or {}).get('value', '?'),
+            'level': e.get('level', 'Informational'),
+            'resource': (e.get('resourceId') or '').split('/')[-1] if e.get('resourceId') else '',
+        })
+    return out
 
 
 # =============================================================================
@@ -762,6 +892,309 @@ def dashboard_page():
     return render_template('dashboard.html', categories=ARSENAL_CATEGORIES)
 
 
+@app.route('/observability/<deploy_id>')
+@require_auth
+def observability_page(deploy_id):
+    """Drill-down: live metrics + activity + AI chat for one observability deployment."""
+    return render_template('observability.html', deploy_id=deploy_id)
+
+
+@app.route('/api/observability/<deploy_id>/info')
+@require_auth
+def api_observability_info(deploy_id):
+    info = find_observability_endpoints(deploy_id)
+    if not info:
+        return jsonify({'error': f'No deployment found with deploy_id={deploy_id}'}), 404
+
+    web = info['web_app']
+    web_url = None
+    if web:
+        # default hostname is implicit from the name; we surface it for the UI
+        web_url = f"https://{web['name']}.azurewebsites.net"
+
+    return jsonify({
+        'deploy_id': deploy_id,
+        'rg_name': info['rg_name'],
+        'rg_location': info['rg_location'],
+        'rg_tags': info['rg_tags'],
+        'provisioning_state': info['rg_provisioning_state'],
+        'sources': {
+            'log_analytics': {
+                'present': info['workspace'] is not None,
+                'name': info['workspace']['name'] if info['workspace'] else None,
+            },
+            'app_insights': {
+                'present': info['app_insights'] is not None,
+                'name': info['app_insights']['name'] if info['app_insights'] else None,
+            },
+            'web_app': {
+                'present': web is not None,
+                'name': web['name'] if web else None,
+                'url': web_url,
+            },
+            'activity_log': {'present': True, 'scope': info['rg_name']},
+        },
+        'all_resources': [{
+            'type': r.get('type'),
+            'name': r.get('name'),
+            'location': r.get('location')
+        } for r in info['all_resources']],
+    })
+
+
+@app.route('/api/observability/<deploy_id>/metrics')
+@require_auth
+def api_observability_metrics(deploy_id):
+    info = find_observability_endpoints(deploy_id)
+    if not info:
+        return jsonify({'error': 'Deployment not found'}), 404
+
+    out = {'request_summary': None, 'top_exceptions': [], 'requests_timeseries': [], 'log_volume_gb_7d': None}
+    app_id = info['app_insights']['id'] if info['app_insights'] else None
+    workspace_id = info['workspace']['id'] if info['workspace'] else None
+
+    if app_id:
+        # Request stats over the last hour
+        stats = query_app_insights(app_id, """
+            requests
+            | summarize
+                count = count(),
+                failed = countif(success == false),
+                avgMs = avg(duration),
+                p95Ms = percentile(duration, 95)
+        """, 'PT1H')
+        if stats.get('rows'):
+            r = stats['rows'][0] or {}
+            count = r.get('count') or 0
+            failed = r.get('failed') or 0
+            out['request_summary'] = {
+                'count_1h': count,
+                'failed_1h': failed,
+                'failure_rate_pct': round((failed / count * 100), 2) if count else 0,
+                'avg_ms': round(r.get('avgMs') or 0, 1),
+                'p95_ms': round(r.get('p95Ms') or 0, 1),
+            }
+
+        # 5-minute buckets for the last 24 hours
+        ts = query_app_insights(app_id, """
+            requests
+            | summarize count = count(), failed = countif(success == false) by bin(timestamp, 5m)
+            | order by timestamp asc
+        """, 'PT24H')
+        out['requests_timeseries'] = ts.get('rows', [])
+
+        # Top exceptions by problem
+        exc = query_app_insights(app_id, """
+            exceptions
+            | summarize count = count() by problemId, type
+            | order by count desc
+            | take 5
+        """, 'PT24H')
+        out['top_exceptions'] = exc.get('rows', [])
+
+    if workspace_id:
+        # Log ingestion volume in GB over 7 days
+        log_vol = query_log_analytics(workspace_id, """
+            Usage
+            | summarize totalGb = sum(Quantity) / 1024.0
+        """, 'P7D')
+        rows = log_vol.get('rows', [])
+        if rows:
+            row = rows[0]
+            # log_analytics returns dicts when called the right way
+            if isinstance(row, dict):
+                out['log_volume_gb_7d'] = round(row.get('totalGb') or 0, 3)
+            elif isinstance(row, list) and row:
+                out['log_volume_gb_7d'] = round(row[0] or 0, 3)
+
+    return jsonify(out)
+
+
+@app.route('/api/observability/<deploy_id>/activity')
+@require_auth
+def api_observability_activity(deploy_id):
+    info = find_observability_endpoints(deploy_id)
+    if not info:
+        return jsonify({'error': 'Deployment not found'}), 404
+    return jsonify({'events': get_activity_log(info['rg_name'], max_events=25)})
+
+
+@app.route('/api/observability/<deploy_id>/query', methods=['POST'])
+@require_auth
+def api_observability_query(deploy_id):
+    """Run a custom KQL query against Log Analytics or App Insights."""
+    info = find_observability_endpoints(deploy_id)
+    if not info:
+        return jsonify({'error': 'Deployment not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    kql = (data.get('kql') or '').strip()
+    target = data.get('target', 'app_insights')
+    timespan = data.get('timespan', 'PT1H')
+
+    if not kql:
+        return jsonify({'error': 'kql is required'}), 400
+    if len(kql) > 5000:
+        return jsonify({'error': 'kql too long (max 5000 chars)'}), 400
+
+    if target == 'log_analytics':
+        ws_id = info['workspace']['id'] if info['workspace'] else None
+        return jsonify(query_log_analytics(ws_id, kql, timespan))
+    else:
+        ai_id = info['app_insights']['id'] if info['app_insights'] else None
+        return jsonify(query_app_insights(ai_id, kql, timespan))
+
+
+@app.route('/api/observability/<deploy_id>/chat', methods=['POST'])
+@require_auth
+def api_observability_chat(deploy_id):
+    """AI assistant. Auto-injects deployment context into the system prompt."""
+    if not ANTHROPIC_API_KEY:
+        return jsonify({
+            'error': 'AI chat is not configured. Add ANTHROPIC_API_KEY to the container environment.'
+        }), 503
+
+    data = request.get_json(silent=True) or {}
+    message = (data.get('message') or '').strip()
+    history = data.get('history') or []
+
+    if not message:
+        return jsonify({'error': 'message is required'}), 400
+    if len(message) > 4000:
+        return jsonify({'error': 'message too long (max 4000 chars)'}), 400
+
+    info = find_observability_endpoints(deploy_id)
+    if not info:
+        return jsonify({'error': 'Deployment not found'}), 404
+
+    # Build deployment context lines
+    ctx = [
+        f"Deploy ID: {deploy_id}",
+        f"Resource Group: {info['rg_name']}",
+        f"Region: {info['rg_location']}",
+        f"Provisioning state: {info['rg_provisioning_state']}",
+    ]
+    if info['web_app']:
+        ctx.append(f"Web App: https://{info['web_app']['name']}.azurewebsites.net")
+    if info['app_insights']:
+        ctx.append(f"Application Insights: {info['app_insights']['name']}")
+    if info['workspace']:
+        ctx.append(f"Log Analytics workspace: {info['workspace']['name']}")
+    ctx.append("")
+    ctx.append("Resources in this deployment:")
+    for r in info['all_resources']:
+        ctx.append(f"  - {r.get('type')}/{r.get('name')}")
+
+    # Best-effort: pull a quick metrics snapshot
+    try:
+        if info['app_insights']:
+            stats = query_app_insights(info['app_insights']['id'], """
+                requests | summarize count = count(), failed = countif(success == false), avgMs = avg(duration), p95Ms = percentile(duration, 95)
+            """, 'PT1H')
+            if stats.get('rows'):
+                r = stats['rows'][0] or {}
+                ctx.append("")
+                ctx.append("Last hour App Insights stats:")
+                ctx.append(f"  Total requests: {r.get('count') or 0}")
+                ctx.append(f"  Failed: {r.get('failed') or 0}")
+                ctx.append(f"  Avg duration: {round(r.get('avgMs') or 0, 1)} ms")
+                ctx.append(f"  P95 duration: {round(r.get('p95Ms') or 0, 1)} ms")
+    except Exception:
+        pass
+
+    system_prompt = (
+        "You are an observability assistant inside the Arsenal Deployer platform. "
+        "You help users investigate their Azure observability deployments — Log Analytics, "
+        "Application Insights, and Activity Log. Be concise and practical.\n\n"
+        "When suggesting diagnostic queries, write valid KQL in fenced code blocks and say "
+        "whether to run it against `app_insights` or `log_analytics`. Reference resources by "
+        "name when relevant. Do not invent metric values — only refer to what's in the context. "
+        "If the context is insufficient, say what's needed.\n\n"
+        f"Current deployment context:\n{chr(10).join(ctx)}"
+    )
+
+    # Trim history to last 10 turns
+    safe_history = []
+    for msg in history[-10:]:
+        role = msg.get('role')
+        content = msg.get('content')
+        if role in ('user', 'assistant') and isinstance(content, str) and content:
+            safe_history.append({'role': role, 'content': content[:4000]})
+    safe_history.append({'role': 'user', 'content': message})
+
+    import urllib.request
+    import urllib.error
+
+    body = json.dumps({
+        'model': ANTHROPIC_MODEL,
+        'max_tokens': 1500,
+        'system': system_prompt,
+        'messages': safe_history,
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        'https://api.anthropic.com/v1/messages',
+        data=body,
+        headers={
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+        }
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            payload = json.loads(resp.read().decode('utf-8'))
+        text = ''
+        for block in payload.get('content', []):
+            if block.get('type') == 'text':
+                text += block.get('text', '')
+        return jsonify({
+            'response': text,
+            'model': payload.get('model'),
+            'usage': payload.get('usage') or {},
+        })
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode('utf-8', errors='ignore')[:800]
+        return jsonify({'error': f'Anthropic API HTTP {e.code}: {err_body}'}), 502
+    except urllib.error.URLError as e:
+        return jsonify({'error': f'Network error reaching Anthropic: {e}'}), 502
+    except Exception as e:
+        return jsonify({'error': f'Chat call failed: {e}'}), 500
+
+
+@app.route('/api/debug/templates')
+@require_auth
+def debug_templates():
+    """List every ARM template file the running container can see.
+
+    Visit /api/debug/templates after a deploy to confirm your per-topic
+    JSON files actually shipped into the image. If a topic's file isn't
+    listed here, the container is using the marker-storage fallback.
+    """
+    templates_dir = os.getenv(
+        'ARM_TEMPLATES_DIR',
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'arm-templates')
+    )
+    result = {
+        "templates_dir": templates_dir,
+        "exists": os.path.isdir(templates_dir),
+        "files": []
+    }
+    if not result["exists"]:
+        return jsonify(result), 404
+
+    for root, _dirs, fnames in os.walk(templates_dir):
+        for fname in sorted(fnames):
+            if fname.endswith('.json'):
+                full = os.path.join(root, fname)
+                rel = os.path.relpath(full, templates_dir)
+                result["files"].append({
+                    "rel_path": rel.replace(os.sep, '/'),
+                    "size_bytes": os.path.getsize(full)
+                })
+    return jsonify(result)
+
+
 @app.route('/api/deployments')
 @require_auth
 def list_deployments():
@@ -949,6 +1382,23 @@ def deploy():
         deployment_output = json.loads(deploy_result.stdout)
         outputs = deployment_output.get('properties', {}).get('outputs', {})
 
+        # Find a primary user-facing URL in the outputs. Templates that produce
+        # a web app should expose the URL under one of these well-known keys —
+        # we pick the first one that looks like an http(s):// URL.
+        primary_url = None
+        for key in ('webAppUrl', 'appUrl', 'siteUrl', 'endpoint', 'publicUrl', 'url'):
+            output_entry = outputs.get(key) or {}
+            value = output_entry.get('value') if isinstance(output_entry, dict) else None
+            if isinstance(value, str) and value.startswith(('http://', 'https://')):
+                primary_url = value
+                break
+
+        # Build the success message — embed the URL when we have one so it
+        # shows up even if the front-end doesn't render the full outputs block.
+        success_message = f"🎉 {topic_data['name']} deployed successfully!"
+        if primary_url:
+            success_message += f"  Live at: {primary_url}"
+
         return jsonify({
             "status": "success",
             "deploy_id": deploy_id,
@@ -957,9 +1407,10 @@ def deploy():
             "resource_group": rg_name,
             "deployment_name": deployment_name,
             "portal_url": f"https://portal.azure.com/#@/resource/subscriptions/{os.getenv('AZURE_SUBSCRIPTION_ID', '')}/resourceGroups/{rg_name}",
+            "primary_url": primary_url,
             "estimated_cost": topic_data.get('estimated_cost', 'Variable'),
             "deploy_time": topic_data.get('deploy_time', '45-60s'),
-            "message": f"🎉 {topic_data['name']} deployed successfully!",
+            "message": success_message,
             "outputs": outputs,
             "additional_requirements_processed": bool(additional_requirements)
         })
