@@ -253,19 +253,79 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: 🚀 Build and deploy to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          appSourcePath: ${{ github.workspace }}
-          acrName: ${{ env.ACR_NAME }}
-          containerAppName: arsenal-deployer-aca
-          resourceGroup: ${{ env.AZURE_RG }}
-          imageToBuild: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
-          targetPort: 8080
+      - name: 🧩 Install containerapp extension
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          az extension add --name containerapp --upgrade --only-show-errors
 
-      - name: 📋 Get Container App URL
+      - name: 🔑 Get ACR credentials
+        id: acr-creds
+        run: |
+          ACR_USERNAME=$(az acr credential show --name ${{ env.ACR_NAME }} --query username -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name ${{ env.ACR_NAME }} --query "passwords[0].value" -o tsv)
+          echo "::add-mask::$ACR_PASSWORD"
+          echo "username=$ACR_USERNAME" >> $GITHUB_OUTPUT
+          echo "password=$ACR_PASSWORD" >> $GITHUB_OUTPUT
+
+      - name: 🌐 Ensure Container Apps environment exists
+        run: |
+          if ! az containerapp env show \
+                 --name arsenal-env \
+                 --resource-group ${{ env.AZURE_RG }} >/dev/null 2>&1; then
+            echo "Creating Container Apps environment..."
+            az containerapp env create \
+              --name arsenal-env \
+              --resource-group ${{ env.AZURE_RG }} \
+              --location ${{ env.AZURE_LOCATION }} \
+              --output none
+          else
+            echo "Container Apps environment already exists."
+          fi
+
+      - name: 🚀 Deploy to Azure Container Apps
         id: deploy-aca
         run: |
+          IMAGE="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "Deploying image: $IMAGE"
+
+          if az containerapp show \
+               --name arsenal-deployer-aca \
+               --resource-group ${{ env.AZURE_RG }} >/dev/null 2>&1; then
+            echo "Updating existing Container App..."
+            az containerapp registry set \
+              --name arsenal-deployer-aca \
+              --resource-group ${{ env.AZURE_RG }} \
+              --server ${{ env.ACR_NAME }}.azurecr.io \
+              --username ${{ steps.acr-creds.outputs.username }} \
+              --password ${{ steps.acr-creds.outputs.password }} \
+              --output none
+            az containerapp update \
+              --name arsenal-deployer-aca \
+              --resource-group ${{ env.AZURE_RG }} \
+              --image $IMAGE \
+              --output none
+          else
+            echo "Creating new Container App..."
+            az containerapp create \
+              --name arsenal-deployer-aca \
+              --resource-group ${{ env.AZURE_RG }} \
+              --environment arsenal-env \
+              --image $IMAGE \
+              --registry-server ${{ env.ACR_NAME }}.azurecr.io \
+              --registry-username ${{ steps.acr-creds.outputs.username }} \
+              --registry-password ${{ steps.acr-creds.outputs.password }} \
+              --target-port 8080 \
+              --ingress external \
+              --cpu 1.0 --memory 2.0Gi \
+              --min-replicas 1 --max-replicas 3 \
+              --env-vars \
+                AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
+                AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }} \
+                ARSENAL_ENV=production \
+                ARSENAL_VERSION=${{ github.sha }} \
+              --output none
+          fi
+
           URL=$(az containerapp show \
             --name arsenal-deployer-aca \
             --resource-group ${{ env.AZURE_RG }} \
