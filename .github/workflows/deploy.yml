@@ -20,6 +20,11 @@ on:
           - staging
           - production
 
+# Required for OIDC federated-credential login to Azure
+permissions:
+  id-token: write
+  contents: read
+
 env:
   AZURE_RG: arsenal-platform-rg
   AZURE_LOCATION: eastus
@@ -80,17 +85,15 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🔐 Login to Azure
+      - name: 🔐 Login to Azure (OIDC)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: 🔐 Login to Azure Container Registry
-        uses: azure/docker-login@v1
-        with:
-          login-server: ${{ env.ACR_NAME }}.azurecr.io
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+        run: az acr login --name ${{ env.ACR_NAME }}
 
       - name: 🏷️ Set image tags
         id: tags
@@ -101,7 +104,11 @@ jobs:
 
       - name: 🔨 Build and push to ACR
         run: |
-          docker build             -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.sha }}             -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest             -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:build-${{ steps.tags.outputs.build_num }}             .
+          docker build \
+            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.sha }} \
+            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:build-${{ steps.tags.outputs.build_num }} \
+            .
 
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.sha }}
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
@@ -130,23 +137,61 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🔐 Login to Azure
+      - name: 🔐 Login to Azure (OIDC)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: 🏗️ Create Resource Group (if not exists)
         run: |
-          az group create             --name ${{ env.AZURE_RG }}             --location ${{ env.AZURE_LOCATION }}             --tags "project=arsenal" "managed-by=github-actions"             --output none || true
+          az group create \
+            --name ${{ env.AZURE_RG }} \
+            --location ${{ env.AZURE_LOCATION }} \
+            --tags "project=arsenal" "managed-by=github-actions" \
+            --output none || true
+
+      - name: 🔑 Get ACR credentials
+        id: acr-creds
+        run: |
+          ACR_USERNAME=$(az acr credential show --name ${{ env.ACR_NAME }} --query username -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name ${{ env.ACR_NAME }} --query "passwords[0].value" -o tsv)
+          echo "::add-mask::$ACR_PASSWORD"
+          echo "username=$ACR_USERNAME" >> $GITHUB_OUTPUT
+          echo "password=$ACR_PASSWORD" >> $GITHUB_OUTPUT
 
       - name: 🚀 Deploy to Azure Container Instance
         id: deploy
         run: |
           DNS_LABEL="arsenal-${{ github.run_id }}"
 
-          az container create             --resource-group ${{ env.AZURE_RG }}             --name ${{ env.CONTAINER_NAME }}             --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest             --registry-login-server ${{ env.ACR_NAME }}.azurecr.io             --registry-username ${{ secrets.ACR_USERNAME }}             --registry-password ${{ secrets.ACR_PASSWORD }}             --dns-name-label $DNS_LABEL             --ports 8080             --cpu 2             --memory 4             --os-type Linux             --restart-policy Always             --environment-variables               AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}               AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}               ARSENAL_ENV=${{ github.event.inputs.environment || 'production' }}               ARSENAL_VERSION=${{ github.sha }}               GITHUB_SHA=${{ github.sha }}             --output none
+          az container create \
+            --resource-group ${{ env.AZURE_RG }} \
+            --name ${{ env.CONTAINER_NAME }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest \
+            --registry-login-server ${{ env.ACR_NAME }}.azurecr.io \
+            --registry-username ${{ steps.acr-creds.outputs.username }} \
+            --registry-password ${{ steps.acr-creds.outputs.password }} \
+            --dns-name-label $DNS_LABEL \
+            --ports 8080 \
+            --cpu 2 \
+            --memory 4 \
+            --os-type Linux \
+            --restart-policy Always \
+            --environment-variables \
+              AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
+              AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }} \
+              ARSENAL_ENV=${{ github.event.inputs.environment || 'production' }} \
+              ARSENAL_VERSION=${{ github.sha }} \
+              GITHUB_SHA=${{ github.sha }} \
+            --output none
 
-          FQDN=$(az container show             --resource-group ${{ env.AZURE_RG }}             --name ${{ env.CONTAINER_NAME }}             --query ipAddress.fqdn             --output tsv)
+          FQDN=$(az container show \
+            --resource-group ${{ env.AZURE_RG }} \
+            --name ${{ env.CONTAINER_NAME }} \
+            --query ipAddress.fqdn \
+            --output tsv)
 
           APP_URL="http://${FQDN}:8080"
           echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
@@ -156,9 +201,9 @@ jobs:
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║           🚀 ARSENAL PLATFORM DEPLOYED!                    ║"
           echo "╠════════════════════════════════════════════════════════════╣"
-          echo "║  URL:    $APP_URL                                          ║"
-          echo "║  FQDN:   $FQDN                                             ║"
-          echo "║  Image:  ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest ║"
+          echo "║  URL:    $APP_URL"
+          echo "║  FQDN:   $FQDN"
+          echo "║  Image:  ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest"
           echo "╚════════════════════════════════════════════════════════════╝"
 
       - name: 🧪 Health Check
@@ -192,7 +237,7 @@ jobs:
     runs-on: ubuntu-latest
     name: 🚀 Deploy to Container Apps
     needs: push-to-acr
-    if: github.ref == 'refs/heads/main' && (github.event.inputs.environment == 'production' || !github.event.inputs.environment)
+    if: github.ref == 'refs/heads/main' && (github.event.inputs.environment == 'production' || github.event.inputs.environment == '')
     environment:
       name: production-aca
       url: ${{ steps.deploy-aca.outputs.app_url }}
@@ -201,10 +246,12 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🔐 Login to Azure
+      - name: 🔐 Login to Azure (OIDC)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: 🚀 Build and deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v1
@@ -219,7 +266,11 @@ jobs:
       - name: 📋 Get Container App URL
         id: deploy-aca
         run: |
-          URL=$(az containerapp show             --name arsenal-deployer-aca             --resource-group ${{ env.AZURE_RG }}             --query properties.configuration.ingress.fqdn             --output tsv)
+          URL=$(az containerapp show \
+            --name arsenal-deployer-aca \
+            --resource-group ${{ env.AZURE_RG }} \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
           echo "app_url=https://$URL" >> $GITHUB_OUTPUT
           echo "✅ Container Apps URL: https://$URL"
 
@@ -233,14 +284,24 @@ jobs:
     if: always() && github.ref == 'refs/heads/main'
 
     steps:
-      - name: 🔐 Login to Azure
+      - name: 🔐 Login to Azure (OIDC)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: 🗑️ Delete old images (keep last 10)
         run: |
-          az acr manifest list-metadata             --name ${{ env.IMAGE_NAME }}             --registry ${{ env.ACR_NAME }}             --orderby time_asc             --query "[?tags==null].digest"             --output tsv | head -n -10 | while read digest; do
+          az acr manifest list-metadata \
+            --name ${{ env.IMAGE_NAME }} \
+            --registry ${{ env.ACR_NAME }} \
+            --orderby time_asc \
+            --query "[?tags==null].digest" \
+            --output tsv | head -n -10 | while read digest; do
               echo "Deleting untagged manifest: $digest"
-              az acr manifest delete                 --name ${{ env.IMAGE_NAME }}@${digest}                 --registry ${{ env.ACR_NAME }}                 --yes || true
+              az acr manifest delete \
+                --name ${{ env.IMAGE_NAME }}@${digest} \
+                --registry ${{ env.ACR_NAME }} \
+                --yes || true
             done
