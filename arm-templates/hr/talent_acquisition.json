@@ -41,8 +41,8 @@
     "storageAccountName": "[concat('arsenalats', variables('uniqueSuffix'))]",
     "resumesContainerName": "resumes",
     "cognitiveAccountName": "[concat('arsenal-lang-', variables('uniqueSuffix'))]",
-    "appServicePlanSku": "[if(greater(parameters('hiring_volume'), 5000), 'S1', if(greater(parameters('hiring_volume'), 1000), 'B2', 'B1'))]",
-    "appServicePlanTier": "[if(greater(parameters('hiring_volume'), 5000), 'Standard', 'Basic')]",
+    "appServicePlanSku": "F1",
+    "appServicePlanTier": "Free",
     "commonTags": {
       "arsenal": "true",
       "category": "hr",
