@@ -1,10 +1,82 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import json
 import os
 import subprocess
 import uuid
+import threading
+import secrets as _secrets
+from functools import wraps
+
+import bcrypt
 
 app = Flask(__name__)
+
+# Session signing key. In production, set SECRET_KEY as an env var so sessions
+# survive container restarts. The fallback only protects local dev.
+app.secret_key = os.getenv("SECRET_KEY") or _secrets.token_hex(32)
+
+# Auth config — set these as env vars in the workflow.
+ARSENAL_USERNAME = os.getenv("ARSENAL_USERNAME", "admin")
+ARSENAL_PASSWORD_HASH = os.getenv("ARSENAL_PASSWORD_HASH", "")  # bcrypt hash
+
+
+def require_auth(f):
+    """Gate a route behind a logged-in session.
+    HTML routes redirect to /login. API routes return 401 JSON.
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("authenticated"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "authentication required"}), 401
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return wrapper
+
+# =============================================================================
+# AZURE CLI AUTHENTICATION
+# Uses the container's system-assigned managed identity. The identity is
+# attached when the container is created (see deploy.yml). After login, the
+# az CLI caches credentials inside the container, so subsequent calls work.
+# =============================================================================
+
+_az_login_lock = threading.Lock()
+_az_logged_in = False
+
+
+def ensure_az_login():
+    """Idempotent: log in via managed identity once per container lifetime."""
+    global _az_logged_in
+    if _az_logged_in:
+        return
+
+    with _az_login_lock:
+        if _az_logged_in:
+            return
+
+        result = subprocess.run(
+            ["az", "login", "--identity", "--output", "none"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"az login --identity failed (is a managed identity attached "
+                f"and granted Contributor?): {result.stderr.strip()}"
+            )
+
+        sub_id = os.getenv("AZURE_SUBSCRIPTION_ID")
+        if sub_id:
+            sub_result = subprocess.run(
+                ["az", "account", "set", "--subscription", sub_id, "--output", "none"],
+                capture_output=True, text=True, timeout=15
+            )
+            if sub_result.returncode != 0:
+                raise RuntimeError(
+                    f"az account set failed: {sub_result.stderr.strip()}"
+                )
+
+        _az_logged_in = True
+
 
 # =============================================================================
 # ARSENAL KNOWLEDGE BASE: 8 Categories with Expandable Topics
@@ -584,17 +656,68 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
 # FLASK ROUTES
 # =============================================================================
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page. POST validates credentials against env-configured user."""
+    if session.get("authenticated"):
+        return redirect(url_for("index"))
+
+    error = None
+    if request.method == 'POST':
+        username = (request.form.get('username') or '').strip()
+        password = request.form.get('password') or ''
+
+        valid = False
+        if ARSENAL_PASSWORD_HASH and username == ARSENAL_USERNAME:
+            try:
+                valid = bcrypt.checkpw(
+                    password.encode('utf-8'),
+                    ARSENAL_PASSWORD_HASH.encode('utf-8')
+                )
+            except (ValueError, TypeError):
+                valid = False
+
+        if valid:
+            session.clear()
+            session['authenticated'] = True
+            session['username'] = username
+            return redirect(url_for('index'))
+
+        error = 'Invalid username or password'
+
+    return render_template('login.html', error=error), (401 if error else 200)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
+@app.route('/auth/whoami')
+def whoami():
+    if not session.get('authenticated'):
+        return jsonify({'authenticated': False})
+    return jsonify({
+        'authenticated': True,
+        'username': session.get('username')
+    })
+
+
 @app.route('/')
+@require_auth
 def index():
     return render_template('index.html', categories=ARSENAL_CATEGORIES)
 
 
 @app.route('/api/categories')
+@require_auth
 def get_categories():
     return jsonify(ARSENAL_CATEGORIES)
 
 
 @app.route('/api/deploy', methods=['POST'])
+@require_auth
 def deploy():
     data = request.json
     category = data.get('category')
@@ -625,14 +748,19 @@ def deploy():
     deployment_name = f"arsenal-{deploy_id}"
 
     try:
+        # Make sure the CLI inside this container is authenticated.
+        ensure_az_login()
+
         # Create resource group
-        subprocess.run([
+        rg_result = subprocess.run([
             "az", "group", "create",
             "--name", rg_name,
             "--location", "eastus",
             "--tags", f"arsenal=true category={category} topic={topic} deploy_id={deploy_id}",
             "--output", "none"
-        ], check=True, timeout=30)
+        ], capture_output=True, text=True, timeout=30)
+        if rg_result.returncode != 0:
+            raise Exception(f"az group create failed: {rg_result.stderr.strip()}")
 
         # Deploy ARM template
         deploy_result = subprocess.run([
@@ -682,6 +810,7 @@ def deploy():
 
 
 @app.route('/api/custom-topic', methods=['POST'])
+@require_auth
 def add_custom_topic():
     """Allow users to add custom topics to any category."""
     data = request.json
@@ -701,9 +830,11 @@ def add_custom_topic():
 
 
 @app.route('/api/status/<deploy_id>')
+@require_auth
 def check_status(deploy_id):
     """Check deployment status."""
     try:
+        ensure_az_login()
         result = subprocess.run([
             "az", "deployment", "group", "list",
             "--resource-group", f"arsenal-*-{deploy_id}",
@@ -722,9 +853,11 @@ def check_status(deploy_id):
 
 
 @app.route('/api/destroy/<deploy_id>', methods=['POST'])
+@require_auth
 def destroy(deploy_id):
     """Destroy a deployment."""
     try:
+        ensure_az_login()
         result = subprocess.run([
             "az", "group", "list",
             "--query", f"[?contains(name, 'arsenal-') && contains(name, '{deploy_id}')].name",

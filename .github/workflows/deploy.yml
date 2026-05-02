@@ -163,6 +163,12 @@ jobs:
 
       - name: 🚀 Deploy to Azure Container Instance
         id: deploy
+        env:
+          # Pass via env so bash doesn't expand $ characters in the bcrypt hash.
+          # Inside the run script, reference these as "$VAR" — no further expansion happens.
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ARSENAL_USERNAME: ${{ secrets.ARSENAL_USERNAME }}
+          ARSENAL_PASSWORD_HASH: ${{ secrets.ARSENAL_PASSWORD_HASH }}
         run: |
           DNS_LABEL="arsenal-${{ github.run_id }}"
 
@@ -179,13 +185,38 @@ jobs:
             --memory 4 \
             --os-type Linux \
             --restart-policy Always \
+            --assign-identity '[system]' \
             --environment-variables \
               AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
               AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }} \
               ARSENAL_ENV=${{ github.event.inputs.environment || 'production' }} \
               ARSENAL_VERSION=${{ github.sha }} \
               GITHUB_SHA=${{ github.sha }} \
+            --secure-environment-variables \
+              "SECRET_KEY=$SECRET_KEY" \
+              "ARSENAL_USERNAME=$ARSENAL_USERNAME" \
+              "ARSENAL_PASSWORD_HASH=$ARSENAL_PASSWORD_HASH" \
             --output none
+
+          # Grant the container's managed identity Contributor on the subscription
+          # so it can create resource groups and resources for user deployments.
+          PRINCIPAL_ID=$(az container show \
+            --resource-group ${{ env.AZURE_RG }} \
+            --name ${{ env.CONTAINER_NAME }} \
+            --query identity.principalId \
+            --output tsv)
+
+          echo "Container managed identity principalId: $PRINCIPAL_ID"
+
+          # Wait briefly for the identity to propagate to AAD before assigning a role.
+          sleep 15
+
+          az role assignment create \
+            --assignee-object-id $PRINCIPAL_ID \
+            --assignee-principal-type ServicePrincipal \
+            --role Contributor \
+            --scope /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }} \
+            --output none || echo "Role assignment may already exist, continuing."
 
           FQDN=$(az container show \
             --resource-group ${{ env.AZURE_RG }} \
@@ -284,6 +315,12 @@ jobs:
 
       - name: 🚀 Deploy to Azure Container Apps
         id: deploy-aca
+        env:
+          # Same reason as the ACI step: bcrypt hashes contain $ characters that
+          # bash would otherwise expand. Use env vars and quote the references.
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ARSENAL_USERNAME: ${{ secrets.ARSENAL_USERNAME }}
+          ARSENAL_PASSWORD_HASH: ${{ secrets.ARSENAL_PASSWORD_HASH }}
         run: |
           IMAGE="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           echo "Deploying image: $IMAGE"
@@ -341,13 +378,45 @@ jobs:
               --ingress external \
               --cpu 1.0 --memory 2.0Gi \
               --min-replicas 1 --max-replicas 3 \
+              --system-assigned \
               --env-vars \
                 AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
                 AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }} \
                 ARSENAL_ENV=production \
                 ARSENAL_VERSION=${{ github.sha }} \
+                "SECRET_KEY=secretref:secret-key" \
+                "ARSENAL_USERNAME=secretref:arsenal-username" \
+                "ARSENAL_PASSWORD_HASH=secretref:arsenal-password-hash" \
+              --secrets \
+                "secret-key=$SECRET_KEY" \
+                "arsenal-username=$ARSENAL_USERNAME" \
+                "arsenal-password-hash=$ARSENAL_PASSWORD_HASH" \
               --output none
           fi
+
+          # Make sure the app has a system-assigned identity (idempotent).
+          az containerapp identity assign \
+            --name arsenal-deployer-aca \
+            --resource-group ${{ env.AZURE_RG }} \
+            --system-assigned \
+            --output none
+
+          # Grant Contributor on the subscription so the app can deploy stacks.
+          PRINCIPAL_ID=$(az containerapp show \
+            --name arsenal-deployer-aca \
+            --resource-group ${{ env.AZURE_RG }} \
+            --query identity.principalId \
+            --output tsv)
+
+          echo "Container App managed identity principalId: $PRINCIPAL_ID"
+          sleep 15
+
+          az role assignment create \
+            --assignee-object-id $PRINCIPAL_ID \
+            --assignee-principal-type ServicePrincipal \
+            --role Contributor \
+            --scope /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }} \
+            --output none || echo "Role assignment may already exist, continuing."
 
           URL=$(az containerapp show \
             --name arsenal-deployer-aca \

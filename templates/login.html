@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sign in · Arsenal Deployer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-0: #07101F;
+    --bg-1: #0A1428;
+    --bg-2: #0F1B33;
+    --bg-3: #16263E;
+    --line: rgba(143, 163, 196, 0.18);
+    --grid: rgba(6, 182, 212, 0.06);
+
+    --ink: #E8F0FF;
+    --ink-2: #C5D2E8;
+    --ink-dim: #8FA3C4;
+    --ink-mute: #5A6E8E;
+
+    --cyan: #06B6D4;
+    --cyan-glow: rgba(6, 182, 212, 0.55);
+    --lime: #84CC16;
+    --lime-glow: rgba(132, 204, 22, 0.55);
+    --pink: #EC4899;
+    --violet: #A78BFA;
+    --danger: #F87171;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg-0);
+    color: var(--ink);
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Background atmosphere: blueprint grid + soft glows */
+  body::before, body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::before {
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at center, #000 30%, transparent 80%);
+  }
+  body::after {
+    background:
+      radial-gradient(circle at 20% 30%, rgba(6, 182, 212, 0.12) 0%, transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(167, 139, 250, 0.10) 0%, transparent 40%);
+  }
+
+  .shell {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: linear-gradient(180deg, rgba(15, 27, 51, 0.85) 0%, rgba(10, 20, 40, 0.85) 100%);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 36px 32px 28px;
+    backdrop-filter: blur(8px);
+    box-shadow:
+      0 30px 60px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(6, 182, 212, 0.05);
+    animation: cardIn 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Header */
+  .kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--lime);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border: 1px solid rgba(132, 204, 22, 0.35);
+    border-radius: 999px;
+    background: rgba(132, 204, 22, 0.06);
+    margin-bottom: 18px;
+  }
+  .kicker .led {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--lime);
+    box-shadow: 0 0 8px var(--lime-glow);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+
+  h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+    background: linear-gradient(180deg, #ffffff 0%, #92AECF 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  h1 .cursor {
+    display: inline-block;
+    width: 0.4em;
+    height: 0.95em;
+    background: var(--cyan);
+    margin-left: 4px;
+    vertical-align: -0.1em;
+    animation: blink 1.05s steps(2, jump-none) infinite;
+    box-shadow: 0 0 12px var(--cyan-glow);
+  }
+  .sub {
+    color: var(--ink-dim);
+    font-size: 14px;
+    margin-bottom: 28px;
+  }
+
+  /* Form */
+  form { display: flex; flex-direction: column; gap: 14px; }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .field label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  .input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .input-wrap .glyph {
+    position: absolute;
+    left: 12px;
+    color: var(--ink-mute);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    pointer-events: none;
+  }
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 12px 14px 12px 36px;
+    background: var(--bg-0);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.15);
+  }
+  input::placeholder { color: var(--ink-mute); }
+
+  /* Show/hide password toggle */
+  .toggle-pw {
+    position: absolute;
+    right: 10px;
+    background: none;
+    border: 0;
+    color: var(--ink-mute);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 3px;
+  }
+  .toggle-pw:hover { color: var(--cyan); }
+
+  /* Submit */
+  button[type="submit"] {
+    margin-top: 10px;
+    padding: 13px 16px;
+    background: linear-gradient(135deg, #7C3AED 0%, #06B6D4 100%);
+    border: 0;
+    border-radius: 4px;
+    color: #ffffff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(124, 58, 237, 0.25);
+    transition: transform 0.15s ease, box-shadow 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  button[type="submit"]:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 32px rgba(124, 58, 237, 0.35);
+  }
+  button[type="submit"]:active { transform: translateY(0); }
+  button[type="submit"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+  button[type="submit"] .arr { font-size: 14px; }
+
+  /* Error */
+  .error {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    background: rgba(248, 113, 113, 0.08);
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    border-radius: 4px;
+    color: var(--danger);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    margin-bottom: 16px;
+    animation: shake 0.4s ease-in-out;
+  }
+  .error .x {
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  /* Footer */
+  .foot {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-mute);
+    letter-spacing: 0.06em;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .foot .right { color: var(--ink-dim); }
+
+  /* Animations */
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    50.01%, 100% { opacity: 0; }
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.6; }
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <div class="card">
+    <span class="kicker"><span class="led"></span>SECURE ACCESS</span>
+
+    <h1>Arsenal Deployer<span class="cursor"></span></h1>
+    <p class="sub">Sign in to access the deployment platform.</p>
+
+    {% if error %}
+    <div class="error" role="alert">
+      <span class="x">[!]</span>
+      <span>{{ error }}</span>
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('login') }}" autocomplete="on" novalidate>
+      <div class="field">
+        <label for="username">Username</label>
+        <div class="input-wrap">
+          <span class="glyph">$</span>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            placeholder="admin"
+            autocomplete="username"
+            spellcheck="false"
+            autocapitalize="off"
+            required
+            autofocus
+          />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="input-wrap">
+          <span class="glyph">⚷</span>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="••••••••••••"
+            autocomplete="current-password"
+            required
+          />
+          <button type="button" class="toggle-pw" id="togglePw" tabindex="-1" aria-label="Show password">SHOW</button>
+        </div>
+      </div>
+
+      <button type="submit" id="submitBtn">
+        <span class="label">Authenticate</span>
+        <span class="arr">→</span>
+      </button>
+    </form>
+
+    <div class="foot">
+      <span>$ arsenal-deployer · v1.0</span>
+      <span class="right">Session expires on close</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Show/hide password
+  const pwInput = document.getElementById('password');
+  const toggle = document.getElementById('togglePw');
+  toggle.addEventListener('click', () => {
+    const isPw = pwInput.type === 'password';
+    pwInput.type = isPw ? 'text' : 'password';
+    toggle.textContent = isPw ? 'HIDE' : 'SHOW';
+    toggle.setAttribute('aria-label', isPw ? 'Hide password' : 'Show password');
+  });
+
+  // Lock the button on submit so double-clicks don't double-post
+  const form = document.querySelector('form');
+  const btn = document.getElementById('submitBtn');
+  form.addEventListener('submit', () => {
+    btn.disabled = true;
+    btn.querySelector('.label').textContent = 'Authenticating';
+  });
+</script>
+
+</body>
+</html>
