@@ -576,30 +576,44 @@ ARSENAL_CATEGORIES = {
 def generate_arm_template(category, topic_key, topic_data, custom_inputs):
     """Generate a complete ARM template based on topic configuration and user inputs.
 
-    Every template:
-      - Declares a base set of parameters (location, environmentName) plus all the
-        per-topic inputs declared in topic_data['inputs'].
-      - Includes a single 'marker' storage account tagged with category/topic/deploy_id
-        so the user sees a concrete resource in the portal after deployment.
-      - Is valid for all 32+ topics with no per-category special-casing.
-
-    Returning a 'marker' resource (rather than per-topic real infra like AKS, ML
-    Workspace, etc.) keeps demo deployments fast (~30s), region-portable, cheap,
-    and free of subscription-quota gotchas. Swap in topic-specific resources here
-    when you're ready to deploy real infrastructure.
+    Lookup order:
+      1. arm-templates/{category}/{topic_key}.json on disk — used as-is. The file's
+         own parameters block defines what user inputs flow through. This is how
+         "real" topics are wired up (see observability_stack.json, talent_acquisition.json).
+      2. Generic 'marker' template — a tagged storage account, used as a placeholder
+         for topics that don't yet have a real template. Lets every topic's deploy
+         button succeed while we incrementally fill in real infra per topic.
     """
     deploy_id = str(uuid.uuid4())[:8]
     base_name = f"{category}-{topic_key}-{deploy_id}"
 
-    # Base ARM template — always-declared parameters + outputs.
+    # --- Path 1: load from disk if a real template exists ---
+    templates_dir = os.getenv(
+        'ARM_TEMPLATES_DIR',
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'arm-templates')
+    )
+    template_path = os.path.join(templates_dir, category, f'{topic_key}.json')
+    if os.path.isfile(template_path):
+        try:
+            with open(template_path) as f:
+                template = json.load(f)
+            return template, base_name, deploy_id
+        except (OSError, json.JSONDecodeError) as e:
+            # Don't crash the deploy on a malformed file — log and fall through
+            # to the marker template so the user still gets a working deployment.
+            app.logger.warning(
+                "Failed to load %s, falling back to marker template: %s",
+                template_path, e
+            )
+
+    # --- Path 2: marker storage template (default for all unwired topics) ---
     template = {
         "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
         "contentVersion": "1.0.0.0",
         "parameters": {
             "location": {
                 "type": "string",
-                "defaultValue": "[resourceGroup().location]",
-                "metadata": {"description": "Location for all resources"}
+                "defaultValue": "[resourceGroup().location]"
             },
             "environmentName": {
                 "type": "string",
@@ -609,8 +623,6 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
         "variables": {
             "uniqueSuffix": deploy_id,
             "baseName": base_name,
-            # Storage account names: 3-24 chars, lowercase letters + digits only.
-            # uniqueString() yields a deterministic 13-char string per (rg, suffix).
             "storageAccountName": "[concat('arsenal', uniqueString(resourceGroup().id, variables('uniqueSuffix')))]"
         },
         "resources": [
@@ -656,8 +668,6 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
         }
     }
 
-    # Add each topic input as a template parameter so deploy() can pass user values.
-    # This way the template's allowed-parameter list always matches what the UI sends.
     for input_key, input_config in topic_data.get('inputs', {}).items():
         param_type = "string"
         input_type = input_config.get('type')
@@ -668,12 +678,19 @@ def generate_arm_template(category, topic_key, topic_data, custom_inputs):
         elif input_type == 'multi_select':
             param_type = "array"
 
-        param_spec = {
-            "type": param_type,
-            "defaultValue": input_config.get('default', '' if param_type == 'string' else (0 if param_type == 'int' else (False if param_type == 'bool' else [])))
-        }
+        default_value = input_config.get('default')
+        if default_value is None:
+            if param_type == 'int':
+                default_value = 0
+            elif param_type == 'bool':
+                default_value = False
+            elif param_type == 'array':
+                default_value = []
+            else:
+                default_value = ''
+
+        param_spec = {"type": param_type, "defaultValue": default_value}
         if 'options' in input_config and input_type == 'select':
-            # Restrict to the listed options when provided.
             param_spec["allowedValues"] = input_config['options']
 
         template['parameters'][input_key] = param_spec
@@ -737,6 +754,110 @@ def whoami():
 @require_auth
 def index():
     return render_template('index.html', categories=ARSENAL_CATEGORIES)
+
+
+@app.route('/dashboard')
+@require_auth
+def dashboard_page():
+    return render_template('dashboard.html', categories=ARSENAL_CATEGORIES)
+
+
+@app.route('/api/deployments')
+@require_auth
+def list_deployments():
+    """Return every resource group tagged arsenal=true with its resources.
+
+    Used by /dashboard. Reads from Azure live (no local persistence) so the
+    dashboard always reflects truth even if someone deleted a RG out-of-band.
+    """
+    try:
+        ensure_az_login()
+
+        rg_result = subprocess.run([
+            "az", "group", "list",
+            "--query", "[?tags.arsenal=='true']",
+            "--output", "json"
+        ], capture_output=True, text=True, timeout=30)
+
+        if rg_result.returncode != 0:
+            return jsonify({
+                "error": "Failed to list resource groups",
+                "details": rg_result.stderr.strip()
+            }), 500
+
+        groups = json.loads(rg_result.stdout or "[]")
+        deployments = []
+
+        for g in groups:
+            tags = g.get('tags') or {}
+            category = tags.get('category', 'unknown')
+            topic = tags.get('topic', 'unknown')
+            deploy_id = tags.get('deploy_id', '')
+
+            # Fetch resources for this RG. Cap timeout per-RG so a single slow
+            # group doesn't stall the whole dashboard.
+            resources = []
+            res_result = subprocess.run([
+                "az", "resource", "list",
+                "--resource-group", g['name'],
+                "--query", "[].{type:type, name:name, location:location}",
+                "--output", "json"
+            ], capture_output=True, text=True, timeout=15)
+            if res_result.returncode == 0:
+                try:
+                    resources = json.loads(res_result.stdout or "[]")
+                except json.JSONDecodeError:
+                    resources = []
+
+            # Look up topic metadata for friendly name + cost estimate.
+            cat_data = ARSENAL_CATEGORIES.get(category, {})
+            topic_data = cat_data.get('topics', {}).get(topic, {})
+
+            deployments.append({
+                "deploy_id": deploy_id,
+                "resource_group": g.get('name'),
+                "location": g.get('location'),
+                "category": category,
+                "category_name": cat_data.get('name', category.title()),
+                "category_icon": cat_data.get('icon', '📦'),
+                "category_color": cat_data.get('color', '#06B6D4'),
+                "topic": topic,
+                "topic_name": topic_data.get('name', topic.replace('_', ' ').title()),
+                "estimated_cost": topic_data.get('estimated_cost', 'Unknown'),
+                "deploy_time": topic_data.get('deploy_time', '—'),
+                "resource_count": len(resources),
+                "resources": resources,
+                "provisioning_state": (g.get('properties') or {}).get('provisioningState', 'Unknown'),
+                "portal_url": (
+                    f"https://portal.azure.com/#@/resource/subscriptions/"
+                    f"{os.getenv('AZURE_SUBSCRIPTION_ID', '')}/resourceGroups/{g.get('name')}"
+                ),
+            })
+
+        # Sort newest-first by deploy_id (UUIDs aren't temporal but the alpha
+        # order is deterministic which is good enough for a small list).
+        deployments.sort(key=lambda d: d['resource_group'], reverse=True)
+
+        # Build summary roll-up.
+        by_category = {}
+        for d in deployments:
+            by_category.setdefault(d['category'], 0)
+            by_category[d['category']] += 1
+
+        return jsonify({
+            "deployments": deployments,
+            "summary": {
+                "total": len(deployments),
+                "categories_used": len(by_category),
+                "total_resources": sum(d['resource_count'] for d in deployments),
+                "by_category": by_category,
+            }
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Azure CLI timed out listing deployments"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/categories')

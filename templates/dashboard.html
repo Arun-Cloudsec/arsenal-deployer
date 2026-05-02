@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard · Arsenal Deployer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-0: #07101F;
+    --bg-1: #0A1428;
+    --bg-2: #0F1B33;
+    --bg-3: #16263E;
+    --line: rgba(143, 163, 196, 0.18);
+    --line-strong: rgba(143, 163, 196, 0.32);
+    --grid: rgba(6, 182, 212, 0.06);
+
+    --ink: #E8F0FF;
+    --ink-2: #C5D2E8;
+    --ink-dim: #8FA3C4;
+    --ink-mute: #5A6E8E;
+
+    --cyan: #06B6D4;
+    --cyan-glow: rgba(6, 182, 212, 0.55);
+    --lime: #84CC16;
+    --lime-glow: rgba(132, 204, 22, 0.55);
+    --amber: #F59E0B;
+    --pink: #EC4899;
+    --violet: #A78BFA;
+    --danger: #F87171;
+    --warn: #FACC15;
+
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Space Grotesk', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg-0);
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before, body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::before {
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at top, #000 30%, transparent 90%);
+  }
+  body::after {
+    background:
+      radial-gradient(circle at 15% 10%, rgba(6, 182, 212, 0.10) 0%, transparent 35%),
+      radial-gradient(circle at 85% 60%, rgba(132, 204, 22, 0.07) 0%, transparent 40%);
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 32px 28px 80px; }
+
+  /* ========== TOP BAR ========== */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 32px; gap: 16px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    font-family: var(--mono); font-size: 18px; font-weight: 800;
+    color: var(--ink); letter-spacing: -0.01em;
+  }
+  .brand .pulse {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--lime);
+    box-shadow: 0 0 10px var(--lime-glow);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .nav { display: flex; gap: 4px; align-items: center; }
+  .nav a, .nav button {
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    color: var(--ink-dim); text-decoration: none;
+    padding: 8px 14px; border-radius: 4px;
+    background: transparent; border: 1px solid transparent;
+    cursor: pointer; transition: all 0.18s;
+  }
+  .nav a:hover, .nav button:hover { color: var(--ink); border-color: var(--line); background: rgba(255,255,255,0.02); }
+  .nav a.active { color: var(--cyan); border-color: rgba(6, 182, 212, 0.4); background: rgba(6, 182, 212, 0.08); }
+  .nav .logout { color: var(--danger); }
+  .nav .logout:hover { color: var(--danger); border-color: rgba(248, 113, 113, 0.4); }
+
+  /* ========== HEADER ========== */
+  .header {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+    margin-bottom: 28px; flex-wrap: wrap;
+  }
+  .header h1 {
+    font-family: var(--mono); font-size: clamp(28px, 4vw, 44px); font-weight: 800;
+    letter-spacing: -0.02em; line-height: 1; color: var(--ink);
+  }
+  .header h1 .accent { color: var(--cyan); }
+  .header p {
+    color: var(--ink-dim); margin-top: 8px; font-size: 15px;
+  }
+  .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  .btn {
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 10px 16px; border-radius: 4px; border: 1px solid var(--line);
+    background: var(--bg-2); color: var(--ink); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: all 0.18s;
+  }
+  .btn:hover { border-color: var(--cyan); background: rgba(6, 182, 212, 0.08); }
+  .btn.primary { background: linear-gradient(135deg, #7C3AED, #06B6D4); border: none; color: #fff; }
+  .btn.primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(124, 58, 237, 0.25); }
+  .btn.danger { color: var(--danger); border-color: rgba(248, 113, 113, 0.4); }
+  .btn.danger:hover { background: rgba(248, 113, 113, 0.1); border-color: var(--danger); }
+  .btn.ghost { background: transparent; }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+  .auto-refresh {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+    padding: 6px 12px; border: 1px solid var(--line); border-radius: 4px;
+  }
+  .auto-refresh input { accent-color: var(--cyan); cursor: pointer; }
+
+  /* ========== STATS ========== */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+  .stat {
+    border: 1px solid var(--line); background: var(--bg-2);
+    border-radius: 6px; padding: 18px 20px; position: relative; overflow: hidden;
+  }
+  .stat::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--accent, var(--cyan));
+    box-shadow: 0 0 12px var(--accent, var(--cyan));
+  }
+  .stat .lbl {
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-dim);
+    margin-bottom: 6px;
+  }
+  .stat .num {
+    font-family: var(--mono); font-size: 32px; font-weight: 800;
+    color: var(--accent, var(--cyan)); letter-spacing: -0.02em; line-height: 1;
+  }
+  .stat .sub { font-size: 12px; color: var(--ink-mute); margin-top: 6px; }
+
+  /* ========== FILTERS ========== */
+  .filters {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 14px 16px; background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 6px; margin-bottom: 20px;
+  }
+  .filters .label {
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-dim);
+    margin-right: 4px;
+  }
+  .filters select, .filters input[type=text] {
+    font-family: var(--mono); font-size: 12px; color: var(--ink);
+    background: var(--bg-0); border: 1px solid var(--line); border-radius: 3px;
+    padding: 8px 10px; min-width: 160px; outline: none;
+    transition: border-color 0.18s;
+  }
+  .filters select:focus, .filters input[type=text]:focus { border-color: var(--cyan); }
+  .filters input[type=text]::placeholder { color: var(--ink-mute); }
+  .filters .spacer { flex: 1; }
+  .filters .count { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
+  .filters .count b { color: var(--cyan); font-weight: 700; }
+
+  /* ========== STATE: LOADING / EMPTY / ERROR ========== */
+  .state {
+    text-align: center; padding: 80px 24px;
+    border: 1px dashed var(--line); border-radius: 6px;
+    background: rgba(15, 27, 51, 0.4);
+  }
+  .state .icon {
+    font-size: 56px; margin-bottom: 16px;
+    filter: grayscale(0.3);
+  }
+  .state h3 {
+    font-family: var(--mono); font-size: 18px; color: var(--ink);
+    margin-bottom: 8px;
+  }
+  .state p {
+    color: var(--ink-dim); font-size: 14px; max-width: 480px; margin: 0 auto 20px;
+  }
+  .spinner {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 3px solid var(--bg-3); border-top-color: var(--cyan);
+    animation: spin 0.9s linear infinite; margin: 0 auto 16px;
+  }
+
+  /* ========== DEPLOYMENT GRID ========== */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
+  .card {
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 22px; position: relative; overflow: hidden;
+    transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+    animation: cardIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: var(--line-strong);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  }
+  .card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--accent, var(--cyan));
+  }
+  .card-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px; margin-bottom: 14px;
+  }
+  .card .topic {
+    font-family: var(--mono); font-size: 17px; font-weight: 700;
+    color: var(--ink); letter-spacing: -0.01em; line-height: 1.3;
+  }
+  .card .cat-row {
+    display: flex; align-items: center; gap: 8px; margin-top: 6px;
+    font-size: 12px; color: var(--ink-dim);
+  }
+  .card .cat-icon { font-size: 14px; }
+  .card .cat-name { font-family: var(--mono); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--pill-bg); color: var(--pill-fg);
+    border: 1px solid var(--pill-bd);
+    flex-shrink: 0;
+  }
+  .pill::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--pill-fg);
+    box-shadow: 0 0 6px var(--pill-fg);
+  }
+  .pill.succeeded { --pill-bg: rgba(132,204,22,0.08); --pill-fg: var(--lime); --pill-bd: rgba(132,204,22,0.4); }
+  .pill.running, .pill.creating, .pill.updating, .pill.accepted, .pill.provisioning { --pill-bg: rgba(6,182,212,0.08); --pill-fg: var(--cyan); --pill-bd: rgba(6,182,212,0.4); }
+  .pill.failed { --pill-bg: rgba(248,113,113,0.08); --pill-fg: var(--danger); --pill-bd: rgba(248,113,113,0.4); }
+  .pill.deleting { --pill-bg: rgba(245,158,11,0.08); --pill-fg: var(--amber); --pill-bd: rgba(245,158,11,0.4); }
+  .pill.unknown { --pill-bg: rgba(143,163,196,0.08); --pill-fg: var(--ink-dim); --pill-bd: var(--line); }
+  .pill.running::before, .pill.creating::before, .pill.provisioning::before, .pill.accepted::before, .pill.updating::before {
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  .meta-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px;
+    padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    margin: 12px 0 14px;
+  }
+  .meta-grid .key {
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-mute);
+    margin-bottom: 2px;
+  }
+  .meta-grid .val { font-family: var(--mono); font-size: 12px; color: var(--ink); word-break: break-all; }
+  .meta-grid .val.cost { color: var(--lime); }
+  .meta-grid .val.id { color: var(--cyan); }
+
+  .res-summary {
+    display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px;
+  }
+  .res-chip {
+    font-family: var(--mono); font-size: 10px; color: var(--ink-2);
+    padding: 3px 8px; border: 1px solid var(--line); border-radius: 3px;
+    background: rgba(255,255,255,0.02);
+  }
+  .res-chip .cnt { color: var(--cyan); margin-right: 4px; font-weight: 700; }
+  .res-chip.empty { color: var(--ink-mute); border-style: dashed; }
+
+  .card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .card-actions .btn { padding: 8px 12px; font-size: 11px; flex: 1; justify-content: center; }
+
+  /* ========== TOAST ========== */
+  .toast-stack {
+    position: fixed; bottom: 20px; right: 20px;
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 100; max-width: 380px;
+  }
+  .toast {
+    font-family: var(--mono); font-size: 12px;
+    padding: 12px 16px; border-radius: 5px; border: 1px solid;
+    background: var(--bg-2); animation: toastIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+  .toast.ok { border-color: rgba(132,204,22,0.5); color: var(--lime); }
+  .toast.err { border-color: rgba(248,113,113,0.5); color: var(--danger); }
+  .toast.info { border-color: rgba(6,182,212,0.5); color: var(--cyan); }
+  .toast .x { font-weight: 700; }
+
+  /* ========== ANIMATIONS ========== */
+  @keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.6; }
+  }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+  @media (max-width: 760px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand"><span class="pulse"></span>ARSENAL DEPLOYER</div>
+    <nav class="nav">
+      <a href="/">Deploy</a>
+      <a href="/dashboard" class="active">Dashboard</a>
+      <a href="/logout" class="logout">Sign out</a>
+    </nav>
+  </div>
+
+  <div class="header">
+    <div>
+      <h1>Deployment <span class="accent">Dashboard</span></h1>
+      <p>Live view of every Arsenal stack you've shipped. Click a card to manage.</p>
+    </div>
+    <div class="header-actions">
+      <label class="auto-refresh">
+        <input type="checkbox" id="autoRefresh" />
+        Auto-refresh 30s
+      </label>
+      <button class="btn" id="refreshBtn">↻ Refresh</button>
+      <a class="btn primary" href="/">+ New Deployment</a>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat" style="--accent: var(--cyan);">
+      <div class="lbl">Active</div>
+      <div class="num" id="statTotal">—</div>
+      <div class="sub">resource groups</div>
+    </div>
+    <div class="stat" style="--accent: var(--lime);">
+      <div class="lbl">Resources</div>
+      <div class="num" id="statResources">—</div>
+      <div class="sub">across all stacks</div>
+    </div>
+    <div class="stat" style="--accent: var(--amber);">
+      <div class="lbl">Categories</div>
+      <div class="num" id="statCategories">—</div>
+      <div class="sub">in use</div>
+    </div>
+    <div class="stat" style="--accent: var(--pink);">
+      <div class="lbl">Last refresh</div>
+      <div class="num" style="font-size: 18px; line-height: 1.4;" id="statRefresh">—</div>
+      <div class="sub" id="statRefreshSub">never</div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <span class="label">Filter</span>
+    <select id="filterCategory"><option value="">All categories</option></select>
+    <select id="filterStatus">
+      <option value="">All statuses</option>
+      <option value="Succeeded">Succeeded</option>
+      <option value="Running">Running / Provisioning</option>
+      <option value="Failed">Failed</option>
+      <option value="Deleting">Deleting</option>
+    </select>
+    <input type="text" id="filterSearch" placeholder="Search topic, RG, deploy id…" />
+    <span class="spacer"></span>
+    <span class="count">Showing <b id="filterCount">0</b> of <b id="filterTotal">0</b></span>
+  </div>
+
+  <div id="content">
+    <!-- populated by JS -->
+    <div class="state">
+      <div class="spinner"></div>
+      <h3>Loading deployments…</h3>
+      <p>Querying Azure for resource groups tagged <code>arsenal=true</code>.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast-stack" id="toasts"></div>
+
+<script>
+const STATE = {
+  deployments: [],
+  filtered: [],
+  loading: true,
+  autoRefreshTimer: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+function toast(message, kind = 'info', duration = 4000) {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.innerHTML = `<span class="x">${kind === 'ok' ? '✓' : kind === 'err' ? '✗' : 'ℹ'}</span><span>${message}</span>`;
+  $('toasts').appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.3s';
+    setTimeout(() => el.remove(), 300);
+  }, duration);
+}
+
+function statePill(state) {
+  const cls = (state || 'Unknown').toLowerCase();
+  return `<span class="pill ${cls}">${state || 'Unknown'}</span>`;
+}
+
+function timeAgo(ts) {
+  if (!ts) return 'never';
+  const d = (new Date() - ts) / 1000;
+  if (d < 60) return `${Math.round(d)}s ago`;
+  if (d < 3600) return `${Math.round(d/60)}m ago`;
+  return `${Math.round(d/3600)}h ago`;
+}
+
+// Group resource types by namespace and count.
+function summarizeResources(resources) {
+  if (!resources || !resources.length) return [];
+  const byNs = {};
+  for (const r of resources) {
+    const ns = (r.type || '').split('/')[0].replace('Microsoft.', '');
+    byNs[ns] = (byNs[ns] || 0) + 1;
+  }
+  return Object.entries(byNs).sort((a,b) => b[1] - a[1]);
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderCard(d) {
+  const summary = summarizeResources(d.resources);
+  const resChips = summary.length
+    ? summary.map(([ns, n]) => `<span class="res-chip"><span class="cnt">${n}</span>${escapeHtml(ns)}</span>`).join('')
+    : `<span class="res-chip empty">no resources visible yet</span>`;
+
+  return `
+    <div class="card" style="--accent: ${escapeHtml(d.category_color)};">
+      <div class="card-head">
+        <div>
+          <div class="topic">${escapeHtml(d.topic_name)}</div>
+          <div class="cat-row">
+            <span class="cat-icon">${escapeHtml(d.category_icon)}</span>
+            <span class="cat-name">${escapeHtml(d.category_name)}</span>
+          </div>
+        </div>
+        ${statePill(d.provisioning_state)}
+      </div>
+
+      <div class="meta-grid">
+        <div>
+          <div class="key">Deploy ID</div>
+          <div class="val id">${escapeHtml(d.deploy_id || '—')}</div>
+        </div>
+        <div>
+          <div class="key">Region</div>
+          <div class="val">${escapeHtml(d.location || '—')}</div>
+        </div>
+        <div>
+          <div class="key">Resources</div>
+          <div class="val">${d.resource_count}</div>
+        </div>
+        <div>
+          <div class="key">Est. cost</div>
+          <div class="val cost">${escapeHtml(d.estimated_cost)}</div>
+        </div>
+      </div>
+
+      <div class="res-summary">${resChips}</div>
+
+      <div class="card-actions">
+        <a class="btn ghost" href="${escapeHtml(d.portal_url)}" target="_blank" rel="noopener">↗ Portal</a>
+        <button class="btn danger" data-destroy="${escapeHtml(d.deploy_id)}" data-rg="${escapeHtml(d.resource_group)}">✕ Destroy</button>
+      </div>
+    </div>
+  `;
+}
+
+function applyFilters() {
+  const cat = $('filterCategory').value;
+  const status = $('filterStatus').value.toLowerCase();
+  const q = $('filterSearch').value.trim().toLowerCase();
+
+  STATE.filtered = STATE.deployments.filter(d => {
+    if (cat && d.category !== cat) return false;
+    if (status) {
+      const s = (d.provisioning_state || '').toLowerCase();
+      // Bucket "Running" with provisioning-related states
+      if (status === 'running' && !['running', 'creating', 'updating', 'accepted', 'provisioning'].includes(s)) return false;
+      if (status !== 'running' && s !== status) return false;
+    }
+    if (q) {
+      const hay = [d.topic_name, d.category_name, d.resource_group, d.deploy_id, d.topic, d.category].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  $('filterCount').textContent = STATE.filtered.length;
+  $('filterTotal').textContent = STATE.deployments.length;
+  renderList();
+}
+
+function renderList() {
+  const root = $('content');
+  if (STATE.loading) return; // keep spinner
+
+  if (!STATE.deployments.length) {
+    root.innerHTML = `
+      <div class="state">
+        <div class="icon">📭</div>
+        <h3>No deployments yet</h3>
+        <p>You haven't deployed any stacks yet — or none of your resource groups are tagged <code>arsenal=true</code>.</p>
+        <a class="btn primary" href="/">+ Deploy your first stack</a>
+      </div>
+    `;
+    return;
+  }
+
+  if (!STATE.filtered.length) {
+    root.innerHTML = `
+      <div class="state">
+        <div class="icon">🔎</div>
+        <h3>Nothing matches those filters</h3>
+        <p>Try clearing the search box or category filter.</p>
+      </div>
+    `;
+    return;
+  }
+
+  root.innerHTML = `<div class="grid">${STATE.filtered.map(renderCard).join('')}</div>`;
+
+  // Wire up destroy buttons
+  root.querySelectorAll('[data-destroy]').forEach(btn => {
+    btn.addEventListener('click', (e) => onDestroy(e.currentTarget));
+  });
+}
+
+async function loadCategories() {
+  try {
+    const res = await fetch('/api/categories');
+    if (!res.ok) return;
+    const cats = await res.json();
+    const sel = $('filterCategory');
+    for (const [key, c] of Object.entries(cats)) {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = `${c.icon || ''} ${c.name || key}`.trim();
+      sel.appendChild(opt);
+    }
+  } catch (e) { /* silent */ }
+}
+
+async function loadDeployments(showSpinner = true) {
+  if (showSpinner) {
+    STATE.loading = true;
+    $('content').innerHTML = `
+      <div class="state">
+        <div class="spinner"></div>
+        <h3>Loading deployments…</h3>
+        <p>Querying Azure live. This can take a few seconds with many resource groups.</p>
+      </div>`;
+  }
+
+  try {
+    const res = await fetch('/api/deployments');
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`HTTP ${res.status}: ${detail.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    STATE.loading = false;
+    STATE.deployments = data.deployments || [];
+
+    // Update stats
+    const sum = data.summary || {};
+    $('statTotal').textContent = sum.total ?? 0;
+    $('statResources').textContent = sum.total_resources ?? 0;
+    $('statCategories').textContent = sum.categories_used ?? 0;
+    const now = new Date();
+    $('statRefresh').textContent = now.toLocaleTimeString('en-US', { hour12: false });
+    $('statRefreshSub').textContent = `${STATE.deployments.length} deployment${STATE.deployments.length === 1 ? '' : 's'} loaded`;
+    STATE._lastLoad = now;
+
+    applyFilters();
+  } catch (err) {
+    STATE.loading = false;
+    $('content').innerHTML = `
+      <div class="state">
+        <div class="icon">⚠️</div>
+        <h3>Couldn't load deployments</h3>
+        <p>${escapeHtml(String(err.message || err))}</p>
+        <button class="btn" onclick="loadDeployments()">Try again</button>
+      </div>`;
+    toast(`Failed to load: ${err.message || err}`, 'err');
+  }
+}
+
+async function onDestroy(btn) {
+  const deployId = btn.dataset.destroy;
+  const rg = btn.dataset.rg;
+  if (!deployId) {
+    toast('No deploy_id on this resource group — destroy via Azure portal.', 'err');
+    return;
+  }
+  if (!confirm(`Destroy deployment "${rg}"?\n\nThis deletes the entire resource group and all resources inside it. This cannot be undone.`)) {
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '… destroying';
+
+  try {
+    const res = await fetch(`/api/destroy/${encodeURIComponent(deployId)}`, { method: 'POST' });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    toast(`Destroying ${rg} — Azure is processing the delete asynchronously.`, 'ok', 6000);
+    // Refresh after a short delay so the resource group shows as Deleting / disappears
+    setTimeout(() => loadDeployments(false), 4000);
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = '✕ Destroy';
+    toast(`Destroy failed: ${err.message || err}`, 'err');
+  }
+}
+
+function setupAutoRefresh() {
+  $('autoRefresh').addEventListener('change', (e) => {
+    clearInterval(STATE.autoRefreshTimer);
+    if (e.target.checked) {
+      STATE.autoRefreshTimer = setInterval(() => loadDeployments(false), 30000);
+      toast('Auto-refresh enabled (every 30s)', 'info', 2500);
+    } else {
+      toast('Auto-refresh disabled', 'info', 2000);
+    }
+  });
+}
+
+// Boot
+document.addEventListener('DOMContentLoaded', () => {
+  loadCategories();
+  loadDeployments();
+  setupAutoRefresh();
+
+  $('refreshBtn').addEventListener('click', () => loadDeployments());
+  $('filterCategory').addEventListener('change', applyFilters);
+  $('filterStatus').addEventListener('change', applyFilters);
+  $('filterSearch').addEventListener('input', applyFilters);
+
+  // Update "last refresh" relative time every 10s
+  setInterval(() => {
+    if (STATE._lastLoad) $('statRefreshSub').textContent = `loaded ${timeAgo(STATE._lastLoad)}`;
+  }, 10000);
+});
+</script>
+
+</body>
+</html>
